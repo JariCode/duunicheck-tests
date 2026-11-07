@@ -130,5 +130,3 @@ Network mocks: the Browser library has no request interception keyword, so `libr
 Some things cannot be automated reliably: real mailbox codes, Google login, changing the real account password
 or e-mail, account deletion in Clerk, printing to PDF, drag and drop, real devices and the production server.
 DuuniCheck is invite-only, so the tests cannot create users; 12b sends the signed webhook directly instead.
-#   d u u n i c h e c k - t e s t s  
- 
