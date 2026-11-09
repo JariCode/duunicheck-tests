@@ -1,0 +1,3 @@
+robotframework>=7.0
+robotframework-browser>=19.0
+requests>=2.31

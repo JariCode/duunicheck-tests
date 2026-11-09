@@ -1,0 +1,80 @@
+# ===== Secrets and local configuration (never commit) =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+credentials*.json
+
+# ===== Saved browser sessions, downloads and test artifacts =====
+.auth/
+auth/
+storage_state*.json
+downloads/
+test-downloads/
+testfiles/generated/
+*.har
+
+# ===== Robot Framework results =====
+output.xml
+output*.xml
+log.html
+log*.html
+report.html
+report*.html
+results/
+selenium-screenshot-*.png
+browser/
+playwright-log.txt
+robot_*.log
+# Upload files the UI tests write (now in testfiles/generated/, earlier in the repository root)
+/robot-*
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+pip-log.txt
+
+# ===== Node (Browser library / Playwright) =====
+node_modules/
+npm-debug.log*
+.npm/
+
+# ===== Editors and IDEs =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== Operating system =====
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ===== Logs and temporary files =====
+*.log
+*.tmp
+*.bak
+tmp/
+temp/
+
+# ===== Claude Code settings and skills, local run scripts (kept out of the repository) =====
+.claude/
+run-tests.ps1
+# Manual test list (kept locally)
+MANUAL_TESTS.md
