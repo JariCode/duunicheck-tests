@@ -56,6 +56,8 @@ class DuuniCheckLibrary:
         self._sessions = {}
         self._user_ids = {}
         self._fapi = None
+        self._created_invitations = []
+        self._created_emails = []
 
     # ------------------------------------------------------------------
     # Configuration helpers
@@ -113,6 +115,94 @@ class DuuniCheckLibrary:
         user_id = self._lookup_user_id(user)
         session = self._clerk('POST', '/sessions', json={'user_id': user_id})
         return self._clerk('POST', f'/sessions/{session["id"]}/tokens', json={})['jwt']
+
+    # ------------------------------------------------------------------
+    # Clerk invitations, Frontend API and throw-away users
+    # (the development instance is invite-only: sign-up mode Restricted)
+    # ------------------------------------------------------------------
+    def create_clerk_invitation(self, email, redirect_url):
+        """Creates an invitation with the Backend API (POST /v1/invitations, no e-mail is sent) and
+        returns {'id', 'url', 'email'}. The url is the link an invited person opens; Clerk sends it
+        on to redirect_url with __clerk_ticket. The id is remembered for Revoke Created Invitations,
+        the e-mail for Delete Created Clerk Users."""
+        invitation = self._clerk('POST', '/invitations', json={
+            'email_address': email, 'redirect_url': redirect_url, 'notify': False, 'expires_in_days': 1})
+        if not invitation.get('url'):
+            raise AssertionError(f'Clerk returned an invitation without a url: {invitation}')
+        self._created_invitations.append(invitation['id'])
+        if email not in self._created_emails:
+            self._created_emails.append(email)
+        return {'id': invitation['id'], 'url': invitation['url'], 'email': email}
+
+    def clerk_invitation_status(self, invitation_id):
+        """Returns the status of an invitation (pending, accepted, revoked, expired)."""
+        for status in ('pending', 'accepted', 'revoked', 'expired'):
+            found = self._clerk('GET', '/invitations', params={'status': status, 'limit': 500})
+            items = found if isinstance(found, list) else found.get('data', [])
+            if any(item['id'] == invitation_id for item in items):
+                return status
+        raise AssertionError(f'No Clerk invitation with id {invitation_id}')
+
+    def revoke_created_invitations(self):
+        """Revokes every invitation this run created that is still pending. Accepted ones cannot be
+        revoked and are left as they are. Safe to call in a teardown; returns the revoked ids."""
+        found = self._clerk('GET', '/invitations', params={'status': 'pending', 'limit': 500})
+        pending = {item['id'] for item in (found if isinstance(found, list) else found.get('data', []))}
+        revoked = []
+        for invitation_id in list(self._created_invitations):
+            if invitation_id in pending:
+                self._clerk('POST', f'/invitations/{invitation_id}/revoke')
+                revoked.append(invitation_id)
+            self._created_invitations.remove(invitation_id)
+        return revoked
+
+    def clerk_user_ids_with_email(self, email):
+        """Returns the ids of the Clerk users that have the given e-mail address."""
+        found = self._clerk('GET', '/users', params={'email_address': [email]})
+        return [user['id'] for user in (found if isinstance(found, list) else found.get('data', []))]
+
+    def delete_created_clerk_users(self):
+        """Deletes the Clerk users that signed up with an e-mail this run invited. Returns their ids.
+        The test users A and B are never touched."""
+        protected = {self._cfg.get('TEST_USER_A_EMAIL', '').lower(), self._cfg.get('TEST_USER_B_EMAIL', '').lower()}
+        deleted = []
+        for email in list(self._created_emails):
+            if email.lower() in protected:
+                raise AssertionError('Refusing to delete test user A or B.')
+            for user_id in self.clerk_user_ids_with_email(email):
+                self._clerk('DELETE', f'/users/{user_id}')
+                deleted.append(user_id)
+            self._created_emails.remove(email)
+        return deleted
+
+    def clerk_frontend_api_url(self):
+        """Frontend API address of the development instance (from GET /v1/domains)."""
+        if not self._fapi:
+            found = self._clerk('GET', '/domains')
+            domains = [d for d in found.get('data', []) if not d.get('is_satellite')]
+            if not domains or not domains[0].get('frontend_api_url'):
+                raise AssertionError(f'Clerk returned no Frontend API address: {found}')
+            self._fapi = domains[0]['frontend_api_url'].rstrip('/')
+        return self._fapi
+
+    def frontend_api_sign_up(self, email, password):
+        """Starts a sign-up without an invitation ticket straight through Clerk's Frontend API, like a
+        browser without the app's form would: gets a development browser token (POST /v1/dev_browser)
+        and sends POST /v1/client/sign_ups with only the e-mail and password.
+        Returns an ApiResponse. The e-mail is remembered for Delete Created Clerk Users."""
+        fapi = self.clerk_frontend_api_url()
+        origin = self._cfg.get('FRONTEND_URL', '').rstrip('/')
+        origin = '/'.join(origin.split('/')[:3])
+        headers = {'Origin': origin, 'User-Agent': 'duunicheck-robot-tests'}
+        browser = requests.post(fapi + '/v1/dev_browser', headers=headers, timeout=20)
+        if browser.status_code >= 400:
+            raise AssertionError(f'Clerk dev_browser failed with {browser.status_code}: {browser.text[:300]}')
+        token = browser.json().get('token') or browser.json().get('id')
+        if email not in self._created_emails:
+            self._created_emails.append(email)
+        return ApiResponse(requests.post(fapi + '/v1/client/sign_ups', params={'__clerk_db_jwt': token},
+                                         headers=headers, data={'email_address': email, 'password': password},
+                                         timeout=20))
 
     # ------------------------------------------------------------------
     # HTTP

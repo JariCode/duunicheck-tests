@@ -71,7 +71,39 @@ async function stopRecordingRequests() {
   recordedRequests.length = 0
 }
 
+// Lets the real Clerk Frontend API answer every request whose URL contains urlPart, but adds the given field
+// to missing_fields of every sign-up object in the answer (status missing_requirements). Used to show the
+// form a sign-up that asks for a field the app's form cannot ask for. Remove with Clear Mocked Responses.
+async function addMissingSignUpField(urlPart, field, page, logger) {
+  const patch = (value) => {
+    if (Array.isArray(value)) return value.forEach(patch)
+    if (!value || typeof value !== 'object') return
+    // Clerk's Frontend API names the sign-up object "sign_up_attempt".
+    if (String(value.object || '').startsWith('sign_up') && Array.isArray(value.missing_fields)) {
+      if (!value.missing_fields.includes(field)) value.missing_fields.push(field)
+      if (!Array.isArray(value.required_fields)) value.required_fields = []
+      if (!value.required_fields.includes(field)) value.required_fields.push(field)
+      value.status = 'missing_requirements'
+    }
+    Object.values(value).forEach(patch)
+  }
+  await page.route((url) => url.href.includes(String(urlPart)), async (route) => {
+    const response = await route.fetch()
+    let body = await response.text()
+    try {
+      const json = JSON.parse(body)
+      patch(json)
+      body = JSON.stringify(json)
+      logger(`Added missing sign-up field ${field} to ${route.request().method()} ${route.request().url()}`)
+    } catch (error) {
+      // Not JSON (e.g. a preflight): passed on unchanged.
+    }
+    await route.fulfill({ response, body })
+  })
+}
+
 exports.__esModule = true
+exports.addMissingSignUpField = addMissingSignUpField
 exports.startRecordingRequests = startRecordingRequests
 exports.getRecordedRequests = getRecordedRequests
 exports.stopRecordingRequests = stopRecordingRequests

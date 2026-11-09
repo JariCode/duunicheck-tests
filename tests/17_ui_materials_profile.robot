@@ -304,8 +304,11 @@ AI chat context options can be toggled for a chosen application
     [Documentation]    TC17-018. Expected result: Application picker and every context option can be switched on and off.
     # The posting draft section is also a .permission-list and its label contains "hakemuspohja",
     # so the context options are located without it.
+    # The CV, Hakukirje and notes rows are enabled only when the application has that material (TC21-001).
     ${cv}=    Create Cv As    A    name=ROBOT Chat CV
-    ${app}=    Create Application As    A    company=ROBOT Chat Oy    cvId=${cv}[id]    link=https://example.com/job
+    ${template}=    Create Template As    A    name=ROBOT Chat pohja
+    ${app}=    Create Application As    A    company=ROBOT Chat Oy    cvId=${cv}[id]    templateId=${template}[id]
+    ...    notes=Chatin muistiinpano    link=https://example.com/job
     Reload
     Wait For Workspace
     Go To Section    AI-chat
@@ -313,7 +316,7 @@ AI chat context options can be toggled for a chosen application
     Click    css=.application-picker-trigger
     Click    css=[role="option"]:has-text("ROBOT Chat Oy")
     Get Text    css=.application-picker-trigger    contains    ROBOT Chat Oy
-    FOR    ${label}    IN    Työpaikkailmoitus    Valittu CV    Hakemuspohja    Tämän hakemuksen muistiinpanot
+    FOR    ${label}    IN    Työpaikkailmoitus    Valittu CV    Hakukirje    Tämän hakemuksen muistiinpanot
         Check Checkbox    css=${CONTEXT_OPTIONS} label:has-text("${label}") input
         Get Checkbox State    css=${CONTEXT_OPTIONS} label:has-text("${label}") input    ==    checked
         Uncheck Checkbox    css=${CONTEXT_OPTIONS} label:has-text("${label}") input

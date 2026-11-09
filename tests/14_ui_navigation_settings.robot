@@ -56,6 +56,32 @@ Protected data is not stored in browser storage
     Should Not Contain    ${storage}    whsec_
     Should Not Contain    ${storage}    ${USER_A_PASSWORD}
 
+Clerk checkbox in the password change form is a small checkbox in every theme
+    [Documentation]    TC14-008. Expected result: in the themes default, dark and light, Hallitse tiliä → Turvallisuus →
+    ...    password change shows the "Kirjaudu ulos kaikista muista laitteista" checkbox as a checkbox of at most
+    ...    20 × 20 px (the text field styles no longer hit it). The password is not changed: the dialog is closed
+    ...    with Escape.
+    FOR    ${theme}    IN    default    dark    light
+        Api Request    PUT    /api/settings    user=A    json_body=${{ {'theme': $theme} }}
+        Go To    ${FRONTEND_URL}
+        Wait For Workspace
+        Get Attribute    css=html    data-duunicheck-theme    ==    ${theme}
+        Click    css=.cl-userButtonTrigger
+        Click    css=.cl-userButtonPopoverActionButton:has-text("Hallitse tiliä")
+        Wait For Elements State    css=.cl-modalContent    visible
+        Click    css=.cl-modalContent >> text=Turvallisuus
+        Click    css=.cl-modalContent .cl-profileSection__password button >> nth=0
+        ${checkbox}=    Set Variable    css=.cl-modalContent input[type="checkbox"]
+        Wait For Elements State    ${checkbox}    visible    timeout=15s
+        Get Text    css=.cl-modalContent    contains    Kirjaudu ulos kaikista muista laitteista
+        ${box}=    Get BoundingBox    ${checkbox}
+        Should Be True    0 < ${box}[width] <= 20 and 0 < ${box}[height] <= 20
+        ...    msg=The checkbox is ${box}[width] × ${box}[height] px in theme ${theme}
+        Keyboard Key    press    Escape
+        Wait For Elements State    css=.cl-modalContent    detached    timeout=10s
+    END
+    [Teardown]    Api Request    PUT    /api/settings    user=A    json_body=${{ {'theme': 'default'} }}
+
 Signing out returns the user to the landing page
     [Documentation]    TC14-006. Expected result: Signing out returns the user to the landing page.
     Click    css=.cl-userButtonTrigger

@@ -376,3 +376,110 @@ Status Hyväksytty is stored, returned and can be set with an update
     ${list}=    Api Request    GET    /api/applications    user=A
     ${after}=    Evaluate    [a for a in $list.json if a['id'] == $sent['id']][0]
     Should Be Equal    ${after}[status]    Hyväksytty
+
+Deleting an attached file removes it from the application, which can still be saved
+    [Documentation]    TC03-030. An application has an attached CV file and two application files. Expected result:
+    ...    deleting the CV file and one application file from the library (DELETE /api/files/:id, 204) removes
+    ...    them from the application: cvFileId becomes empty and applicationFileIds keeps only the remaining
+    ...    file. The application as returned by the list can be saved again unchanged (PUT 200) and still has
+    ...    no reference to the deleted files. Sending a deleted file id again is a new reference to a missing
+    ...    file and is refused (400) without changing the stored application.
+    [Tags]    files
+    ${cv_file}=    Upload Text File As    A    cv    ${PREFIX}-ref-cv.txt
+    ${letter}=    Upload Text File As    A    application    ${PREFIX}-ref-letter.txt
+    ${kept}=    Upload Text File As    A    application    ${PREFIX}-ref-kept.txt
+    ${app}=    Create Application As    A    cvFileId=${cv_file}[id]    applicationFileIds=${{ [$letter['id'], $kept['id']] }}
+    FOR    ${file}    IN    ${cv_file}    ${letter}
+        ${deleted}=    Api Request    DELETE    /api/files/${file}[id]    user=A
+        Status Should Be    ${deleted}    204
+    END
+    ${stored}=    Stored Application    ${app}[id]
+    Should Be Equal    ${stored}[cvFileId]    ${EMPTY}
+    Should Be Equal    ${stored}[applicationFileIds]    ${{ [$kept['id']] }}
+    ${body}=    Update Body Of    ${stored}
+    ${saved}=    Api Request    PUT    /api/applications/${app}[id]    user=A    json_body=${body}
+    Status Should Be    ${saved}    200
+    Should Be Equal    ${saved.json}[cvFileId]    ${EMPTY}
+    Should Be Equal    ${saved.json}[applicationFileIds]    ${{ [$kept['id']] }}
+    ${stale_letter}=    Evaluate    {**$body, 'applicationFileIds': [$kept['id'], $letter['id']]}
+    ${stale}=    Api Request    PUT    /api/applications/${app}[id]    user=A    json_body=${stale_letter}
+    Status Should Be    ${stale}    400
+    Error Response Should Be Safe    ${stale}
+    ${stale_cv}=    Evaluate    {**$body, 'cvFileId': $cv_file['id']}
+    ${stale}=    Api Request    PUT    /api/applications/${app}[id]    user=A    json_body=${stale_cv}
+    Status Should Be    ${stale}    400
+    ${after}=    Stored Application    ${app}[id]
+    Should Be Equal    ${after}[cvFileId]    ${EMPTY}
+    Should Be Equal    ${after}[applicationFileIds]    ${{ [$kept['id']] }}
+
+Another user's file cannot be attached to an own application by an update
+    [Documentation]    TC03-031. Expected result: user A cannot attach a file of user B to A's own application with an
+    ...    update, neither as cvFileId nor in applicationFileIds: the answer is 400 with a safe message and the stored
+    ...    application keeps its own references. B's file is not changed.
+    [Tags]    files    isolation
+    ${own}=    Upload Text File As    A    application    ${PREFIX}-own-letter.txt
+    ${b_cv}=    Upload Text File As    B    cv    ${PREFIX}-b-cv.txt
+    ${b_letter}=    Upload Text File As    B    application    ${PREFIX}-b-letter.txt
+    ${app}=    Create Application As    A    applicationFileIds=${{ [$own['id']] }}
+    ${stored}=    Stored Application    ${app}[id]
+    ${body}=    Update Body Of    ${stored}
+    ${with_cv}=    Evaluate    {**$body, 'cvFileId': $b_cv['id']}
+    ${response}=    Api Request    PUT    /api/applications/${app}[id]    user=A    json_body=${with_cv}
+    Status Should Be    ${response}    400
+    Error Response Should Be Safe    ${response}
+    ${with_letter}=    Evaluate    {**$body, 'applicationFileIds': [$own['id'], $b_letter['id']]}
+    ${response}=    Api Request    PUT    /api/applications/${app}[id]    user=A    json_body=${with_letter}
+    Status Should Be    ${response}    400
+    Error Response Should Be Safe    ${response}
+    ${after}=    Stored Application    ${app}[id]
+    Should Be Equal    ${after}[cvFileId]    ${EMPTY}
+    Should Be Equal    ${after}[applicationFileIds]    ${{ [$own['id']] }}
+    ${b_files}=    Api Request    GET    /api/files    user=B
+    ${b_ids}=    Ids Of    ${b_files}
+    Should Contain    ${b_ids}    ${b_letter}[id]
+    [Teardown]    Delete All Data    B
+
+Deleting an attached CV or template clears it and the application can still be saved
+    [Documentation]    TC03-032. One application uses an app CV and another a template. Expected result: deleting
+    ...    the CV and the template (204) clears cvId and templateId of the applications while the other fields stay,
+    ...    and both applications can be saved again as they are returned (PUT 200). A deleted CV or template id sent
+    ...    again is refused (400).
+    ${cv}=    Create Cv As    A
+    ${template}=    Create Template As    A
+    ${with_cv}=    Create Application As    A    cvId=${cv}[id]    notes=CV-viite
+    ${with_template}=    Create Application As    A    templateId=${template}[id]    notes=Pohjaviite
+    ${deleted}=    Api Request    DELETE    /api/cvs/${cv}[id]    user=A
+    Status Should Be    ${deleted}    204
+    ${deleted}=    Api Request    DELETE    /api/templates/${template}[id]    user=A
+    Status Should Be    ${deleted}    204
+    FOR    ${app}    ${field}    ${old}    ${notes}    IN
+    ...    ${with_cv}    cvId    ${cv}[id]    CV-viite
+    ...    ${with_template}    templateId    ${template}[id]    Pohjaviite
+        ${stored}=    Stored Application    ${app}[id]
+        Should Be Equal    ${stored}[${field}]    ${EMPTY}
+        Should Be Equal    ${stored}[notes]    ${notes}
+        ${body}=    Update Body Of    ${stored}
+        ${saved}=    Api Request    PUT    /api/applications/${app}[id]    user=A    json_body=${body}
+        Status Should Be    ${saved}    200
+        Should Be Equal    ${saved.json}[${field}]    ${EMPTY}
+        ${stale_body}=    Evaluate    {**$body, $field: $old}
+        ${stale}=    Api Request    PUT    /api/applications/${app}[id]    user=A    json_body=${stale_body}
+        Status Should Be    ${stale}    400
+    END
+
+
+*** Keywords ***
+Stored Application
+    [Documentation]    Returns user A's application with the given id from the list.
+    [Arguments]    ${id}
+    ${list}=    Api Request    GET    /api/applications    user=A
+    Status Should Be    ${list}    200
+    ${match}=    Evaluate    [a for a in $list.json if a['id'] == $id]
+    Length Should Be    ${match}    1
+    RETURN    ${match}[0]
+
+Update Body Of
+    [Documentation]    The application as the list returns it, without the fields the server sets itself.
+    [Arguments]    ${stored}
+    ${body}=    Evaluate    {k: v for k, v in $stored.items() if k not in ('id', 'createdAt', 'updatedAt', 'userId')}
+    RETURN    ${body}

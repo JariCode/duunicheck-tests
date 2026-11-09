@@ -23,6 +23,17 @@ ${PREFIX}                 ROBOT
 # A syntactically valid ObjectId that does not exist.
 ${MISSING_ID}             000000000000000000000000
 ${DIALOG}                 role=dialog
+# The sign-in dialog of the landing page and the same dialog opened from an invitation link.
+${LOGIN_DIALOG}           css=[aria-label="DuuniCheckin kirjautuminen"]
+${INVITE_DIALOG}          css=[aria-label="Kutsu DuuniCheckiin"]
+# The text under the landing page button.
+${LANDING_AUTH_NOTE}      Kirjautuminen avautuu turvallisesti Clerkissä.
+# English words of Clerk's untranslated error messages; none may appear in a sign-in or sign-up error.
+@{ENGLISH_ERROR_WORDS}    password    passwords    incorrect    invalid    expired    account    accounts    characters
+...                       must    please    your    couldn't    could    not    found    already    used    revoked
+...                       too    short    sign    email    address    error    failed    ticket    invitation    the    is
+# redirect_url of the invitations: the SignUp path set in the Clerk instance (Paths).
+${INVITE_REDIRECT_PATH}    /duunicheck/sign-up
 # The top bar of the workspace. It is rendered only for a signed-in user once the data has loaded,
 # and it stays visible on every screen width (the sidebar links are hidden on phones).
 ${WORKSPACE}              css=.workspace .topbar
@@ -318,7 +329,111 @@ Open Sign In
 Open Login Dialog
     Open Landing Page
     Click    text=Avaa DuuniCheck >> nth=0
-    Wait For Elements State    css=[aria-label="DuuniCheckin kirjautuminen ja tilin luonti"]    visible
+    Wait For Elements State    ${LOGIN_DIALOG}    visible
+
+Invite Throw-away User
+    [Documentation]    The Clerk development instance is invite-only (Access mode Invite-only), so a new
+    ...    account needs an invitation. Creates one with the Clerk Backend API (POST /v1/invitations,
+    ...    no e-mail is sent) for a made-up +clerk_test address, with the app's sign-up address
+    ...    /duunicheck/sign-up (the SignUp path of the Clerk instance) as redirect_url. Returns
+    ...    {id, url, email}. Remove it in the teardown with Clean Up Invitations.
+    [Arguments]    ${label}=invite
+    Require Config    CLERK_SECRET_KEY
+    ${stamp}=    Generate Random String    10    [LOWER][NUMBERS]
+    ${origin}=    Evaluate    '/'.join($FRONTEND_URL.split('/')[:3])
+    ${invitation}=    Create Clerk Invitation    robot-${label}-${stamp}+clerk_test@example.com    ${origin}${INVITE_REDIRECT_PATH}
+    RETURN    ${invitation}
+
+Open Invitation Link
+    [Documentation]    Opens the invitation link like the invited person would. Clerk forwards it to the app's
+    ...    sign-up address with __clerk_ticket, and the invitation dialog with the app's own sign-up form opens.
+    [Arguments]    ${invitation}
+    Go To    ${invitation}[url]
+    Wait For Elements State    ${INVITE_DIALOG}    visible    timeout=30s
+    Get Url    contains    __clerk_ticket=
+    Wait For Elements State    css=.custom-signup-submit:text-is("Hyväksy kutsu")    enabled
+
+Throw-away Password
+    ${stamp}=    Generate Random String    8    [LOWER][NUMBERS]
+    RETURN    Robot-${stamp}-Kutsu-aA1!
+
+Fill Missing Sign-up Details
+    [Documentation]    Fills every field the "Täydennä tilin tiedot" view shows (name, password, terms) and
+    ...    presses Jatka. Fails when the view has no field to fill.
+    [Arguments]    ${password}
+    ${filled}=    Set Variable    ${0}
+    FOR    ${label}    ${value}    IN    Etunimi    Robot    Sukunimi    Kutsuttu    Salasana    ${password}
+        ${count}=    Get Element Count    css=.custom-signup form >> xpath=.//label[contains(., "${label}")]//input
+        IF    ${count}
+            Fill Text    css=.custom-signup form >> xpath=.//label[contains(., "${label}")]//input    ${value}
+            ${filled}=    Evaluate    $filled + 1
+        END
+    END
+    ${consent}=    Get Element Count    css=.custom-signup-consent input
+    IF    ${consent}
+        Check Checkbox    css=.custom-signup-consent input
+        ${filled}=    Evaluate    $filled + 1
+    END
+    Should Be True    ${filled} > 0    msg=The "Täydennä tilin tiedot" view has no field to fill
+    Click    css=.custom-signup-submit
+
+Enter Sign-up Code If Asked
+    [Documentation]    Types the fixed test code of +clerk_test addresses when the form asks to verify the e-mail.
+    ${asked}=    Run Keyword And Return Status
+    ...    Wait For Elements State    text=Vahvista sähköpostiosoitteesi    visible    timeout=5s
+    IF    not ${asked}    RETURN
+    FOR    ${index}    IN RANGE    6
+        Fill Text    css=input[aria-label="Vahvistuskoodin numero ${index + 1}"]    ${CLERK_CODE}[${index}]
+    END
+    Click    css=.custom-signup-submit
+
+Complete Invitation Sign-up
+    [Documentation]    Signs up in the open invitation form like an invited person: types the password,
+    ...    accepts the terms and the invitation, fills the "Täydennä tilin tiedot" view and the e-mail code
+    ...    when they are asked, and waits for the workspace of the new user.
+    [Arguments]    ${password}
+    Fill Text    css=.custom-signup form >> xpath=.//label[contains(., "Salasana")]//input    ${password}
+    Check Checkbox    css=.custom-signup-consent input
+    Click    css=.custom-signup-submit
+    FOR    ${step}    IN RANGE    3
+        ${done}=    Run Keyword And Return Status    Wait For Elements State    ${WORKSPACE}    visible    timeout=8s
+        IF    ${done}    RETURN
+        ${details}=    Get Element Count    text=Täydennä tilin tiedot
+        IF    ${details}
+            Fill Missing Sign-up Details    ${password}
+        ELSE
+            Enter Sign-up Code If Asked
+        END
+    END
+    ${opened}=    Run Keyword And Return Status    Wait For Workspace
+    IF    not ${opened}
+        ${form}=    Get Text    css=.custom-signup
+        Fail    The workspace did not open after the invitation sign-up. The form shows: ${form}
+    END
+
+Text Should Be Finnish
+    [Documentation]    Fails when an error text shown to the user is empty or contains English words that Clerk's
+    ...    untranslated server messages use (e.g. "password", "incorrect", "invalid", "expired", "account").
+    [Arguments]    ${text}    ${where}=The message
+    Should Not Be Empty    ${text.strip()}    msg=${where} is empty
+    ${english}=    Evaluate    sorted(set(w.lower() for w in re.findall(r'\\b(?:' + '|'.join($ENGLISH_ERROR_WORDS) + r')\\b', $text, re.I)))    modules=re
+    Should Be Empty    ${english}    msg=${where} is not in Finnish (English words ${english}): ${text}
+
+Clean Up Invitations
+    [Documentation]    Teardown helper: revokes the invitations the test created that were not used and
+    ...    deletes the Clerk users that signed up with an invited address. When the webhook secret is set,
+    ...    the backend gets the signed user.deleted webhook of each deleted user (as Clerk would send it),
+    ...    so no data of the throw-away user is left in the test database either.
+    Revoke Created Invitations
+    ${deleted}=    Delete Created Clerk Users
+    IF    $WEBHOOK_SECRET
+        FOR    ${user_id}    IN    @{deleted}
+            ${body}=    Set Variable    {"type":"user.deleted","object":"event","data":{"id":"${user_id}","deleted":true}}
+            ${headers}=    Sign Webhook    ${body}
+            ${response}=    Api Request    POST    /api/webhooks/clerk    raw_body=${body}    headers=${headers}
+            Status Should Be One Of    ${response}    200    202
+        END
+    END
 
 Wait For Workspace
     [Documentation]    Waits until the signed-in user's workspace is shown. The top bar is used
@@ -346,6 +461,12 @@ Enter Verification Code If Asked
     IF    not ${asked}    RETURN
     FOR    ${attempt}    IN RANGE    3
         Run Keyword And Ignore Error    Wait For Load State    networkidle    timeout=10s
+        # Once Clerk has accepted the code the field is gone and the workspace is still loading.
+        ${still_asked}=    Run Keyword And Return Status    Wait For Elements State    ${otp}    visible    timeout=2s
+        IF    not ${still_asked}
+            Wait For Workspace
+            RETURN
+        END
         IF    ${attempt} > 0    Run Keyword And Ignore Error    Clear Verification Code
         Focus    css=input[autocomplete="one-time-code"]
         Keyboard Input    type    ${code}

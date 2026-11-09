@@ -8,6 +8,7 @@ Documentation     Per-application conversations (database questions answered loc
 ...               check require BACKEND_HAS_OPENAI_KEY=true (a dummy key in the test backend is enough);
 ...               the tests tagged no-openai-key need a backend without a key and BACKEND_HAS_OPENAI_KEY=false.
 Resource          ../resources/common.robot
+Library           ../libraries/ImportTestFiles.py
 Suite Setup       Prepare API Suite
 Suite Teardown    Finish API Suite
 Force Tags        api    assistant
@@ -306,7 +307,8 @@ Job posting parser stores nothing
 Job posting parser extracts the application fields with a real OpenAI call
     [Documentation]    TC06-016. Makes ONE real OpenAI call. Only runs with RUN_REAL_AI=true. Expected
     ...                result: company, role, location and deadline are taken from the pasted text, the
-    ...                link is returned as given, the draft has only these fields, nothing is saved and the
+    ...                link is returned as given, the draft has only these fields and an empty recruiterNote
+    ...                (the employer is named), nothing is saved and the
     ...                link (a local port that counts connections) is never opened.
     [Tags]    openai    slow
     [Setup]    Require Real OpenAI Calls
@@ -324,7 +326,9 @@ Job posting parser extracts the application fields with a real OpenAI call
     Should Be Equal    ${draft}[deadline]    2027-12-15
     Should Be Equal    ${draft}[link]    ${link}
     ${keys}=    Evaluate    sorted($draft)
-    Should Be Equal    ${keys}    ${{ ['company', 'deadline', 'link', 'place', 'role'] }}
+    Should Be Equal    ${keys}    ${{ ['company', 'deadline', 'link', 'place', 'recruiterNote', 'role'] }}
+    # The employer is named, so there is no recruiter note.
+    Should Be Equal    ${draft}[recruiterNote]    ${EMPTY}
     Should Be Equal    ${response.json}[existingApplication]    ${None}
     ${after}=    Application Count Of    A
     Should Be Equal As Integers    ${after}    ${before}
@@ -367,3 +371,118 @@ Job posting parser does not reveal another user's application with the same link
     Should Be Equal    ${response.json}[existingApplication]    ${None}
     Should Not Contain    ${response.text}    ${other}[id]
     Should Not Contain    ${response.text}    ROBOT-PRIVATE-B
+
+Cover letter suggestion leaves out the name and contact details of an attached letter
+    [Documentation]    TC06-019. Makes ONE real OpenAI call. Only runs with RUN_REAL_AI=true. An invented cover
+    ...                letter PDF with an invented name, e-mail, phone number and postal address is attached to the
+    ...                application as an application file, and a complete improved letter is asked for with the cover
+    ...                letter context (includeTemplate and includeApplicationText). Expected result: 200, the answer is
+    ...                complete (no "Vastaus jäi kesken" notice), it contains none of the invented name, e-mail, phone
+    ...                number or street address, and it is signed with [Nimesi]; no notice about the file is returned.
+    [Tags]    openai    slow    privacy
+    [Setup]    Require Real OpenAI Calls
+    ${pdf}=    Make Pdf Text    Ilmari Kuusimäki    ilmari.kuusimaki@example.com    Puh. 040 765 4321
+    ...    Kuusikuja 7 B 9    33100 Tampere    ${EMPTY}    Hyvä rekrytoija,
+    ...    haen avointa testiautomaatioinsinöörin tehtävää. Minulla on viiden vuoden kokemus Robot Framework -testeistä
+    ...    ja testien jatkuvasta ajamisesta. Ilmarin vahvuus on huolellisuus.    ${EMPTY}
+    ...    Ystävällisin terveisin,    Ilmari Kuusimäki
+    ${upload}=    Upload File    A    application    ${PREFIX}-hakukirje-ilmari.pdf    ${pdf}    application/pdf
+    Status Should Be    ${upload}    201
+    ${app}=    Create Application As    A    company=ROBOT Kirjeyhtiö Oy    role=Testiautomaatioinsinööri
+    ...    applicationFileIds=${{ [$upload.json['id']] }}
+    ${body}=    Suggest Body    ${app}[id]
+    ...    message=Paranna liitettyä hakukirjettäni ja kirjoita koko kirje valmiiksi alusta allekirjoitukseen asti.
+    ...    includeTemplate=${True}    includeApplicationText=${True}
+    ${response}=    Api Request    POST    /api/assistant/suggest    user=A    json_body=${body}    timeout=120
+    Status Should Be    ${response}    200
+    ${answer}=    Set Variable    ${response.json}[suggestion]
+    Log    ${answer}
+    Should Not Contain    ${answer}    Vastaus jäi kesken
+    FOR    ${private}    IN    Ilmari    Kuusimäki    Kuusimaki    @example.com    040 765 4321    0407654321    765 4321    Kuusikuja    33100
+        Should Not Contain    ${answer}    ${private}    msg=The answer contains the invented personal detail "${private}"
+    END
+    Should Contain    ${answer}    [Nimesi]
+    Should Be Equal    ${response.json}[notices]    ${{ [] }}
+
+Unreadable and long attached files are reported in Finnish with the answer
+    [Documentation]    TC06-020. Makes ONE real OpenAI call. Only runs with RUN_REAL_AI=true. The application has a
+    ...                PDF without any text as its CV file and a 9 000-character text file as its application file;
+    ...                the CV and the cover letter are chosen. Expected result: the request does not fail (200, an
+    ...                answer), and the notices say in Finnish that no readable text was found in the PDF and that the
+    ...                long file was shortened to its first 8 000 characters.
+    [Tags]    openai    slow
+    [Setup]    Require Real OpenAI Calls
+    ${pdf}=    Make Pdf
+    ${scan}=    Upload File    A    cv    ${PREFIX}-skannattu-cv.pdf    ${pdf}    application/pdf
+    Status Should Be    ${scan}    201
+    ${long_text}=    Evaluate    ('Kokemusta testiautomaatiosta ja laadunvarmistuksesta. ' * 200)[:9000]
+    ${long}=    Upload File    A    application    ${PREFIX}-pitka-kirje.txt    ${long_text}    text/plain
+    Status Should Be    ${long}    201
+    ${app}=    Create Application As    A    cvFileId=${scan.json}[id]    applicationFileIds=${{ [$long.json['id']] }}
+    ${body}=    Suggest Body    ${app}[id]    message=Kirjoita yksi lause siitä, mitä liitteissä kerrotaan.
+    ...    includeCv=${True}    includeTemplate=${True}    includeApplicationText=${True}
+    ${response}=    Api Request    POST    /api/assistant/suggest    user=A    json_body=${body}    timeout=120
+    Status Should Be    ${response}    200
+    Should Not Be Empty    ${response.json}[suggestion]
+    ${notices}=    Evaluate    [n.replace(chr(0xa0), ' ').replace(chr(0x202f), ' ') for n in $response.json['notices']]
+    Should Contain    ${notices}    Tiedostosta ${PREFIX}-skannattu-cv.pdf ei löytynyt luettavaa tekstiä (esimerkiksi skannattu PDF), joten se jätettiin pois.
+    Should Contain    ${notices}    Tiedoston ${PREFIX}-pitka-kirje.txt teksti lyhennettiin: AI:lle lähetettiin ensimmäiset 8 000 merkkiä.
+    FOR    ${notice}    IN    @{notices}
+        Text Should Be Finnish    ${notice}    The notice
+    END
+
+Posting from a recruitment agency for a hidden employer names the agency as the client company
+    [Documentation]    TC06-021. Makes ONE real OpenAI call. Only runs with RUN_REAL_AI=true. An invented posting
+    ...                of a recruitment agency that recruits for an unnamed client. Expected result: the company is
+    ...                "<agency> (asiakasyritys)" and recruiterNote is "Rekrytoija: <agency>. Työnantajaa ei kerrottu
+    ...                ilmoituksessa."
+    [Tags]    openai    slow
+    [Setup]    Require Real OpenAI Calls
+    ${text}=    Catenate    SEPARATOR=\n
+    ...    Robottirekry Oy
+    ...    Asiakasyrityksemme, kasvava teknologiayritys, etsii joukkoonsa ohjelmistokehittäjää Tampereelle.
+    ...    Tehtävä: Ohjelmistokehittäjä
+    ...    Sijainti: Tampere
+    ...    Robottirekry Oy hoitaa rekrytoinnin. Asiakkaan nimi kerrotaan haastattelussa.
+    ...    Haku päättyy 15.12.2027.
+    ${response}=    Parse Posting    A    ${text}
+    Status Should Be    ${response}    200
+    Should Be Equal    ${response.json}[draft][company]    Robottirekry Oy (asiakasyritys)
+    Should Be Equal    ${response.json}[draft][recruiterNote]    Rekrytoija: Robottirekry Oy. Työnantajaa ei kerrottu ilmoituksessa.
+
+Posting that names the employer through a recruitment agency uses the employer
+    [Documentation]    TC06-022. Makes ONE real OpenAI call. Only runs with RUN_REAL_AI=true. An invented posting
+    ...                of a recruitment agency that names its client. Expected result: the company is the named
+    ...                employer and recruiterNote is empty.
+    [Tags]    openai    slow
+    [Setup]    Require Real OpenAI Calls
+    ${text}=    Catenate    SEPARATOR=\n
+    ...    Robottirekry Oy
+    ...    Haemme asiakkaallemme Konepaja Esimerkkilä Oy:lle hitsaajaa Tampereelle.
+    ...    Työnantaja: Konepaja Esimerkkilä Oy
+    ...    Tehtävä: Hitsaaja
+    ...    Sijainti: Tampere
+    ...    Haku päättyy 15.12.2027.
+    ${response}=    Parse Posting    A    ${text}
+    Status Should Be    ${response}    200
+    Should Be Equal    ${response.json}[draft][company]    Konepaja Esimerkkilä Oy
+    Should Be Equal    ${response.json}[draft][recruiterNote]    ${EMPTY}
+
+Posting without any company leaves the company empty
+    [Documentation]    TC06-023. Makes ONE real OpenAI call. Only runs with RUN_REAL_AI=true. An invented posting that
+    ...                names no employer and no agency. Expected result: the company and recruiterNote are empty and the
+    ...                role and location are still found.
+    [Tags]    openai    slow
+    [Setup]    Require Real OpenAI Calls
+    ${text}=    Catenate    SEPARATOR=\n
+    ...    Haemme kokoaikaista varastotyöntekijää Tampereelle.
+    ...    Tehtävä: Varastotyöntekijä
+    ...    Sijainti: Tampere
+    ...    Haku päättyy 15.12.2027.
+    ${response}=    Parse Posting    A    ${text}
+    Status Should Be    ${response}    200
+    Should Be Equal    ${response.json}[draft][company]    ${EMPTY}
+    Should Be Equal    ${response.json}[draft][recruiterNote]    ${EMPTY}
+    Should Contain    ${response.json}[draft][role]    arastotyöntekijä
+    Should Contain    ${response.json}[draft][place]    Tampere
+

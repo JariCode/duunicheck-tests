@@ -196,7 +196,12 @@ Posting draft mode locks the application picker and the context options until it
     ...    search options are disabled, the message
     ...    field asks for the posting (16 000 characters) and can be sent without an application. Turning the
     ...    option off restores the picker, the options, their values and the normal message field (4000).
-    ${app}=    Create Application As    A    company=ROBOT Draft Lock Oy
+    ...    The application has a CV, a template and notes, so none of its context rows is disabled for lack of
+    ...    material (TC21-001) and every lock seen here comes from the posting draft mode.
+    ${cv}=    Create Cv As    A    name=ROBOT Draft Lock CV
+    ${template}=    Create Template As    A    name=ROBOT Draft Lock pohja
+    ${app}=    Create Application As    A    company=ROBOT Draft Lock Oy    cvId=${cv}[id]    templateId=${template}[id]
+    ...    notes=Lukitustestin muistiinpano
     Reload
     Wait For Workspace
     Go To Section    AI-chat

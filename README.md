@@ -105,7 +105,10 @@ One suite:
 python -m robot tests/02_authentication_api.robot
 ```
 
-Tags: `api`, `browser`, `security`, `rate-limit`, `slow`, `known-gap`, `openai`, `no-openai-key`, `htaccess`, `build`, `import`.
+Tags: `api`, `browser`, `security`, `rate-limit`, `slow`, `known-gap`, `openai`, `no-openai-key`, `htaccess`, `build`, `import`,
+`invitation`, `finnish-errors`, `dialogs`, `unit`.
+
+Suite 22 runs the backend's own unit tests (`node --test` in `APP_DIR/backend`) as one Robot test.
 
 Robot is never run against the production site. The tests tagged `htaccess` (TC01-016, TC10-012, TC10-014,
 TC10-015) read `frontend/public/.htaccess` from `APP_DIR`, and TC10-016 builds the frontend into the gitignored
@@ -143,4 +146,8 @@ delete paths without OpenAI.
 
 Some things cannot be automated reliably: real mailbox codes, Google login, changing the real account password
 or e-mail, account deletion in Clerk, printing to PDF, drag and drop, real devices and the production server.
-DuuniCheck is invite-only, so the tests cannot create users; 12b sends the signed webhook directly instead.
+DuuniCheck is invite-only (the Clerk development instance stays in the Invite-only access mode). The sign-up tests
+(tag `invitation`) create an invitation with the Clerk Backend API (`POST /v1/invitations`, no e-mail is sent, a
+made-up `+clerk_test` address, redirect_url `/duunicheck/sign-up`), open its link and sign up like a real user. The
+teardown revokes unused invitations and deletes the created Clerk users (and sends the signed `user.deleted`
+webhook to the backend). Test users A and B are never deleted. 12b sends the signed webhook directly for B.

@@ -144,3 +144,22 @@ Valid session token without the azp claim is rejected
     ${token}=    Get Backend Api Token    A
     ${response}=    Api Request    GET    /api/applications    token=${token}
     Status Should Be    ${response}    401
+
+Sign-up without an invitation is refused by Clerk's Frontend API
+    [Documentation]    TC02-017. The Clerk development instance is in Restricted (invite-only) sign-up mode, so the
+    ...    restriction must hold on Clerk's server too, not only in the app's dialog. A sign-up is sent straight to
+    ...    Clerk's Frontend API (POST /v1/client/sign_ups) with a made-up e-mail and a valid password but no
+    ...    invitation ticket. Expected result: Clerk answers with an error (4xx, code sign_up_mode_restricted),
+    ...    the answer has no sign-up object, and no Clerk user with that e-mail exists afterwards.
+    [Tags]    invitation
+    Skip If    not $CLERK_SECRET_KEY    Set CLERK_SECRET_KEY (sk_test_) in .env to run this test.
+    ${stamp}=    Generate Random String    10    [LOWER][NUMBERS]
+    ${email}=    Set Variable    robot-noinvite-${stamp}+clerk_test@example.com
+    ${response}=    Frontend Api Sign Up    ${email}    Robot-${stamp}-Salasana-aA1!
+    Should Be True    400 <= ${response.status} < 500    msg=Sign-up without an invitation was not refused: ${response.status} ${response.text}[:300]
+    ${codes}=    Evaluate    [e.get('code') for e in ($response.json or {}).get('errors', [])]
+    Should Contain    ${codes}    sign_up_mode_restricted    msg=Unexpected Clerk answer: ${response.text}[:300]
+    Should Be Equal    ${{ ($response.json or {}).get('response') }}    ${None}    msg=Clerk returned a sign-up object: ${response.text}[:300]
+    ${users}=    Clerk User Ids With Email    ${email}
+    Should Be Empty    ${users}    msg=A Clerk user was created without an invitation
+    [Teardown]    Delete Created Clerk Users

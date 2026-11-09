@@ -41,6 +41,10 @@ Send Deletion Webhook
     ${response}=    Api Request    POST    /api/webhooks/clerk    raw_body=${body}    headers=${headers}
     RETURN    ${response}
 
+B Theme Should Be Default
+    ${settings}=    Api Request    GET    /api/settings    user=B
+    Should Be Equal    ${settings.json}[theme]    default
+
 B Data Should Be Gone
     [Documentation]    Polls because the deletion runs as a background job.
     FOR    ${attempt}    IN RANGE    15
@@ -66,8 +70,8 @@ Deletion webhook removes all data of the deleted user
     B Data Should Be Gone
     ${history}=    Api Request    GET    /api/conversations/${app_id}    user=B
     Status Should Be    ${history}    404
-    ${settings}=    Api Request    GET    /api/settings    user=B
-    Should Be Equal    ${settings.json}[theme]    default
+    # The background job removes the user record (the theme) after the other data, so it is polled too.
+    Wait Until Keyword Succeeds    15s    1s    B Theme Should Be Default
 
 Deleted user's file can no longer be downloaded
     [Documentation]    TC12B-002. Expected result: the file of a deleted user answers 404 and

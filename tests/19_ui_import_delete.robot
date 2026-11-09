@@ -34,7 +34,7 @@ ${IMPORT_SAVE}      css=.import-message:has(> b:text-is("Työpari · hakemukset 
 ${DELETE_BUTTON}    css=.import-message:has(> b:text-is("Työpari · poistettavat hakemukset")) > button.chat-send
 ${UNDO}             css=.import-undo-button
 ${CONFIRM}          css=.confirm-dialog
-${PRIVACY_NOTE}     Kun kysyt hakemuksesi tiedoista, vastaus haetaan DuuniCheckistä, eikä tietoja lähetetä tekoälylle. Kun pyydät tekoälyltä ehdotuksia, sille lähtee vain viestisi ja ne tiedot, jotka olet itse valinnut. Kun teet hakemuksen ilmoituksesta tai tiedostosta, liittämäsi teksti lähetetään tekoälylle tietojen poimimiseksi, eikä mitään tallenneta ennen kuin hyväksyt sen. Poistopyynnöissä tekoälylle lähtee vain viestisi, ja poisto tehdään vasta vahvistuksesi jälkeen. Keskustelu tallentuu valitun hakemuksen yhteyteen.
+${PRIVACY_NOTE}     Kun kysyt hakemuksesi tiedoista, vastaus haetaan DuuniCheckistä, eikä tietoja lähetetä tekoälylle. Kun pyydät tekoälyltä ehdotuksia, sille lähtee vain viestisi ja ne tiedot, jotka olet itse valinnut. Kun teet hakemuksen ilmoituksesta tai tiedostosta, liittämäsi teksti lähetetään tekoälylle tietojen poimimiseksi, eikä mitään tallenneta ennen kuin hyväksyt sen. Jos valitset CV:n tai hakukirjeen, tekoälylle lähtee myös hakemukseen liitettyjen tiedostojen teksti, josta nimesi, yhteystietosi ja postiosoitteesi poistetaan ennen lähetystä. Tekoälyä ohjeistetaan olemaan kirjoittamatta nimeäsi tai yhteystietojasi vastaukseen. Poistopyynnöissä tekoälylle lähtee vain viestisi, ja poisto tehdään vasta vahvistuksesi jälkeen. Keskustelu tallentuu valitun hakemuksen yhteyteen.
 ${ROWS_NOTICE}      Tiedostossa on 60 hakemusriviä. Yhteen tuontiin otetaan enintään 50, joten mukana ovat ensimmäiset 50. Tuo loput erillisenä tiedostona.
 
 
@@ -203,8 +203,9 @@ Each tool option locks the others and only the import option shows the paperclip
 
 The privacy note of the context column is the new plain-language version
     [Documentation]    TC19-003. Expected result: the privacy note under the context options is exactly the new
-    ...    plain-language text that covers database questions, AI suggestions, posting and file drafts and delete
-    ...    requests.
+    ...    plain-language text that covers database questions, AI suggestions, posting and file drafts, the attached
+    ...    files sent with the CV and cover letter choices without the name, contact details and postal address, the
+    ...    instruction to the AI, and delete requests.
     Open Assistant
     Get Text    css=.assistant-permissions .privacy-note    ==    ${PRIVACY_NOTE}
 
