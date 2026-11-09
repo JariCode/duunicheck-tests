@@ -131,15 +131,39 @@ AI chat answers local questions without calling the AI
     Get Element Count    css=.api-error    ==    0
 
 AI chat input rejects script content by showing it as text only
-    [Documentation]    TC13-008. Expected result: AI chat input rejects script content by showing it as text only.
+    [Documentation]    TC13-008. An application is chosen in the context column and the message is a question about
+    ...    its data ("tila"), so sending is possible without enabling AI suggestions and the message goes to the
+    ...    local answer route (no OpenAI). Expected result: the send button is enabled; after sending, exactly one
+    ...    request goes to POST /api/conversations/<id>/answer and none to /api/assistant/suggest; the chat shows
+    ...    the message as the user's message with the markup as plain text, no img element is created in the chat,
+    ...    the injected script does not run, the local answer appears and the stored history keeps the message
+    ...    unchanged.
+    [Teardown]    Stop Recording Requests
+    ${message}=    Set Variable    Mikä on hakemuksen tila? <img src=x onerror="window.__xss=1"><script>window.__xss=2</script>
+    ${app}=    Create Application As    A    company=ROBOT XSS Chat Oy    status=Lähetetty
+    Reload
+    Wait For Workspace
     Go To Section    AI-chat
-    Fill Text    xpath=//label[contains(., "Viesti työparille")]//textarea    <img src=x onerror="window.__xss=1">
-    ${can_send}=    Run Keyword And Return Status    Wait For Elements State    css=.chat-send    enabled    timeout=2s
-    IF    ${can_send}
-        Click    css=.chat-send
-        Sleep    2s
-    END
+    Click    css=.application-picker-trigger
+    Click    css=[role="option"]:has-text("ROBOT XSS Chat Oy")
+    Get Text    css=.application-picker-trigger    contains    ROBOT XSS Chat Oy
+    Fill Text    ${COMPOSER}    ${message}
+    Wait For Elements State    ${SEND}    enabled    timeout=5s
+    Start Recording Requests    /api/
+    Click    ${SEND}
+    Wait For Elements State    css=.user-message:has-text("Mikä on hakemuksen tila?")    visible
+    Wait For Elements State    css=.assistant-message >> nth=-1 >> text=Tila: Lähetetty    visible
+    ${requests}=    Get Recorded Requests
+    ${posts}=    Evaluate    [r['url'].split('/api/', 1)[1] for r in json.loads($requests) if r['method'] == 'POST']    modules=json
+    Should Be Equal    ${posts}    ${{ ['conversations/' + $app['id'] + '/answer'] }}    msg=The message was not sent once to the local answer route: ${posts}
+    Get Text    css=.user-message >> nth=-1 >> css=p    ==    ${message}
+    Get Element Count    css=.chat-messages img    ==    0
+    Get Element Count    css=.chat-messages script    ==    0
     Script Marker Should Be Unset
+    ${history}=    Api Request    GET    /api/conversations/${app}[id]    user=A
+    Status Should Be    ${history}    200
+    ${stored}=    Evaluate    [m['content'] for m in $history.json['messages'] if m['role'] == 'user']
+    Should Be Equal    ${stored}    ${{ [$message] }}
 
 Posting draft option has its own section even without a chosen application
     [Documentation]    TC13-009. Expected result: The context column shows the "Uusi hakemus ilmoituksesta"
