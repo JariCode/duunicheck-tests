@@ -11,10 +11,11 @@ Force Tags        ui    browser    public
 
 *** Test Cases ***
 Landing page loads with the expected title and call to action
-    [Documentation]    TC01-001. Expected result: Landing page loads with the expected title and call to action.
+    [Documentation]    TC01-001. Expected result: Landing page loads with the title "DuuniCheck – työnhaun seuranta"
+    ...    (with an en dash) and the call to action.
     Open Landing Page
     ${title}=    Get Title
-    Should Contain    ${title}    DuuniCheck
+    Should Be Equal    ${title}    DuuniCheck – työnhaun seuranta
     Get Element Count    text=Avaa DuuniCheck    >=    1
 
 Landing page has no console errors
@@ -254,3 +255,86 @@ Fonts are loaded from the app's own origin
     Should Not Be Empty    ${fonts}    msg=No font files were loaded; the self-hosted fonts are missing
     ${foreign}=    Evaluate    [u for u in $fonts if not u.startswith($origin + '/')]
     Should Be Empty    ${foreign}    msg=Fonts loaded from another origin: ${foreign}
+
+Page has a canonical link and the descriptive title in its metadata
+    [Documentation]    TC01-024. Expected result: frontend/index.html of the application has the title "DuuniCheck –
+    ...    työnhaun seuranta", the same og:title and a canonical link built from VITE_SITE_URL like og:url. The
+    ...    finished build frontend/dist/index.html (read as it is, never built or changed by the test) has exactly
+    ...    one canonical link, its address is an absolute https address ending in "/" and equal to og:url, no
+    ...    placeholder is left and the title is the new one.
+    [Tags]    build
+    Require Config    APP_DIR
+    ${source}=    Get File    ${APP_DIR}${/}frontend${/}index.html    encoding=UTF-8
+    Should Contain    ${source}    <title>DuuniCheck – työnhaun seuranta</title>
+    Should Contain    ${source}    <meta property="og:title" content="DuuniCheck – työnhaun seuranta" />
+    Should Contain    ${source}    <link rel="canonical" href="%VITE_SITE_URL%" />
+    Should Contain    ${source}    <meta property="og:url" content="%VITE_SITE_URL%" />
+    ${dist}=    Normalize Path    ${APP_DIR}${/}frontend${/}dist${/}index.html
+    File Should Exist    ${dist}    msg=No finished build at ${dist}. Build the frontend (npm run build) before the test run.
+    ${built}=    Get File    ${dist}    encoding=UTF-8
+    ${canonicals}=    Get Regexp Matches    ${built}    <link rel="canonical" href="([^"]*)" />    1
+    Length Should Be    ${canonicals}    1    msg=The build must have exactly one canonical link
+    ${og_urls}=    Get Regexp Matches    ${built}    <meta property="og:url" content="([^"]*)" />    1
+    Length Should Be    ${og_urls}    1
+    Should Match Regexp    ${canonicals}[0]    ^https://[^\\s"%<>]+/$    msg=Canonical link of the build is not an absolute https address: ${canonicals}[0]
+    Should Be Equal    ${canonicals}[0]    ${og_urls}[0]
+    Should Not Contain    ${built}    %VITE_SITE_URL%
+    Should Contain    ${built}    <title>DuuniCheck – työnhaun seuranta</title>
+    Should Contain    ${built}    <meta property="og:title" content="DuuniCheck – työnhaun seuranta" />
+
+Terms of use describe the file import and deleting through the assistant
+    [Documentation]    TC01-025. Expected result: the AI assistant section of the terms of use says which files can be
+    ...    imported (Excel .xlsx, CSV, Word .docx, PDF, text), the 5 MB and 50 application limits, that macro and old
+    ...    Excel files are not supported, that the file is not stored and only the chosen applications are saved
+    ...    after approval, that "Kumoa tuonti" works until the page is reloaded, that the AI only turns a delete
+    ...    request into search criteria and deletes nothing, and that a deletion cannot be undone.
+    [Tags]    privacy
+    Open Landing Page
+    Click    css=footer >> text=Käyttöehdot
+    Wait For Elements State    css=#legal-modal-title    visible
+    ${text}=    Get Text    ${DIALOG}
+    Should Contain    ${text}    Avustaja voi myös tuoda hakemuksia liittämästäsi Excel- (.xlsx), CSV-, Word- (.docx), PDF- tai tekstitiedostosta.
+    Should Contain    ${text}    Tiedosto saa olla enintään 5 Mt, ja yhdellä kerralla voi tuoda enintään 50 hakemusta.
+    Should Contain    ${text}    Makroja sisältäviä tai vanhan muodon Excel-tiedostoja ei tueta. Tiedostoa ei tallenneta.
+    Should Contain    ${text}    Vain valitsemasi hakemukset tallennetaan, ja vasta kun hyväksyt ne.
+    Should Contain    ${text}    Tiedostosta tuodut hakemukset voi poistaa Kumoa tuonti -painikkeella, kunnes sivu ladataan uudelleen.
+    Should Contain    ${text}    Tekoäly muuntaa pyynnön hakuehdoiksi, eikä se näe hakemuksia eikä poista mitään.
+    Should Contain    ${text}    Poistoa ei voi perua: poistetut hakemukset ja niiden keskustelut poistuvat pysyvästi.
+    Should Contain    ${text}    9. marraskuuta 2026
+
+Privacy policy describes what the file import and the delete search send to OpenAI
+    [Documentation]    TC01-026. Expected result: the privacy policy says that imported data comes from the attached
+    ...    file, that the file is read only for the request and never stored, that from a spreadsheet only the
+    ...    column headers and at most five example rows go to OpenAI, that from Word, PDF and text files at most
+    ...    16 000 characters go to OpenAI, that nothing is saved before approval, and that a delete request sends
+    ...    only the message and today's date and deletes nothing before confirmation.
+    [Tags]    privacy
+    Open Landing Page
+    Click    css=footer >> text=Tietosuojaseloste
+    Wait For Elements State    css=#legal-modal-title    visible
+    ${text}=    Get Text    ${DIALOG}
+    ${text}=    Evaluate    $text.replace(chr(0xa0), ' ')
+    Should Contain    ${text}    Jos tuot hakemuksia tiedostosta, tiedot saadaan liittämästäsi tiedostosta.
+    Should Contain    ${text}    Kun tuot hakemuksia tiedostosta, tiedosto luetaan palvelimella vain pyynnön ajan, eikä sitä tallenneta minnekään.
+    Should Contain    ${text}    Excel- ja CSV-taulukosta OpenAI:lle lähetetään vain sarakeotsikot ja enintään viisi esimerkkiriviä
+    Should Contain    ${text}    Word-, PDF- ja tekstitiedostosta OpenAI:lle lähetetään tiedoston teksti (enintään 16 000 merkkiä)
+    Should Contain    ${text}    eikä mitään tallenneta ennen kuin valitset ja hyväksyt tallennettavat hakemukset. Tuontia ei lisätä keskusteluhistoriaan.
+    Should Contain    ${text}    Kun pyydät avustajaa etsimään poistettavia hakemuksia, OpenAI:lle lähetetään vain kirjoittamasi viesti ja tämän päivän päivämäärä, ei yhtään hakemuksen tietoa.
+    Should Contain    ${text}    Mitään ei poisteta ennen kuin valitset poistettavat ja vahvistat poiston. Poistopyyntöä ei lisätä keskusteluhistoriaan.
+
+Legal texts and the landing page name no job site
+    [Documentation]    TC01-027. Expected result: the landing page, the sign-in dialog, the terms of use and the
+    ...    privacy policy contain no web address other than the service's own (and the data protection
+    ...    authority's), so no job site is named by its address (Text Should Name No Job Site).
+    [Tags]    privacy
+    Open Landing Page
+    ${landing}=    Get Text    css=body
+    Text Should Name No Job Site    ${landing}    The landing page
+    FOR    ${link}    IN    Käyttöehdot    Tietosuojaseloste
+        Click    css=footer >> text=${link}
+        Wait For Elements State    css=#legal-modal-title    visible
+        ${text}=    Get Text    ${DIALOG}
+        Text Should Name No Job Site    ${text}    ${link}
+        Keyboard Key    press    Escape
+        Wait For Elements State    css=#legal-modal-title    detached
+    END

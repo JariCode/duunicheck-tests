@@ -10,25 +10,27 @@ accounts and keys come from the gitignored `.env`. The TC number of every test i
 
 | Suite | What is tested |
 |---|---|
-| 01_landing_legal_pwa | Landing page, sign-in dialog, legal modals and their posting and font texts, small screens, PWA manifest and icons, self-hosted fonts, third-party requests, secrets in the build (browser) |
+| 01_landing_legal_pwa | Landing page with its title and canonical link, sign-in dialog, legal modals and their posting, file import, delete and font texts, no job site named, small screens, PWA manifest and icons, self-hosted fonts, third-party requests, secrets in the build (browser) |
 | 02_authentication_api | Every protected route needs a valid token; forged, tampered, expired and azp-less tokens are rejected |
-| 03_applications_api | Applications: CRUD, validation, limits, dates, ordering |
+| 03_applications_api | Applications: CRUD, validation (five statuses incl. Hyväksytty), limits, dates, ordering |
 | 04_cvs_templates_api | CVs and cover-letter templates: CRUD, validation, limits |
 | 05_files_api | File upload and download: types, magic bytes, sizes, names, limits, download headers |
 | 06_conversations_assistant_api | Conversation history, local answers, AI endpoint checks, posting links are never fetched (internal and non-HTTPS links included), job posting parser (`parse-posting`): sign-in, validation, missing OpenAI key, nothing stored, real extraction and duplicate check (RUN_REAL_AI) |
 | 07_settings_api | Theme setting, validation and per-user separation |
 | 08_user_isolation_api | User B cannot read, change, delete or attach anything of user A |
 | 09_injection_security_api | NoSQL operators, prototype pollution, script strings, malformed and oversized JSON, CRLF |
-| 10_headers_cors_api | Security headers, CORS, preflight, error responses, headers and manifest MIME type in the published `frontend/public/.htaccess`, no sensitive files in a local frontend build |
+| 10_headers_cors_api | Security headers, CORS, preflight, error responses, headers and manifest MIME type in the published `frontend/public/.htaccess`, no sensitive files in a local frontend build, HSTS and CSP sources in the published `.htaccess`, `vite preview` sends the same headers and redirects the base path without a slash |
 | 11_webhook_api | Clerk webhook signature checks and input validation |
 | 12_ui_applications | Add, edit, change status, delete applications in the browser |
 | 12b_account_deletion_api | The user.deleted webhook removes all data of that user and only that user's |
 | 13_ui_materials_assistant | CV, template and file management, AI chat in the browser, posting draft option: locking of the context, error without OpenAI key, draft editing and saving, duplicate warning, small screens (parse-posting is mocked) |
 | 14_ui_navigation_settings | Navigation, theme persistence, user menu, signing out |
 | 15_ui_xss_security | Hostile strings stored through the API are rendered as text, no script runs |
-| 16_ui_pages_details | Dashboard, progress timeline, calendar, search and stage filter, application details and events, status side effects, form cancel and limits, mobile menu, browser back |
+| 16_ui_pages_details | Dashboard (accepted applications in every theme), status Hyväksytty in the form, list, filter and timeline, progress timeline, calendar, search and stage filter, application details and events, status side effects, form cancel and limits, mobile menu, browser back |
 | 17_ui_materials_profile | CV editing with list chips and photo, template editing, deleting, file download and drop zone, AI chat context options, Clerk profile dialog and legal links in the user menu |
-| 99_rate_limits_api | API, upload and AI rate limits, the posting parser shares the AI limit (needs the backend's ORIGINAL limits) |
+| 18_import_delete_api | File import (`import-applications`, `remap`): sign-in, extension and content checks, macros, size, empty files, zip bombs, encrypted files, character set, PDF scripts, Excel/CSV/Word/PDF/TXT reading and conversion, duplicates, 50 row and 500 application limits, hidden instructions; `bulk-delete` and `find-applications`: sign-in, validation, own data only, no widening by regex characters |
+| 19_ui_import_delete | AI chat tool options and their locking, file import list and saving, undo import, delete search and confirmation, chat state across tabs, reload and sign-out, beforeunload warning, scrolling of long lists, privacy note, small screens (OpenAI answers mocked) |
+| 99_rate_limits_api | API, upload and AI rate limits; the posting parser, the file import and the delete search share the AI limit, file imports count as uploads, bulk delete counts towards the API limit (needs the backend's ORIGINAL limits) |
 
 ## Folder structure
 
@@ -39,6 +41,7 @@ duunicheck-tests/
         common.robot     keywords shared by all suites (browser, sign-in, Api Request, payloads)
     libraries/
         DuuniCheckLibrary.py   raw HTTP requests, webhook signing, test files, forged tokens, connection recorder
+        ImportTestFiles.py     generated import test files (xlsx, csv, docx, pdf, txt) from invented data
         network_mocks.js       Browser library extension: mocks API responses (Playwright page.route)
         config.py              .env reader
     tests/                 the test suites
@@ -102,7 +105,7 @@ One suite:
 python -m robot tests/02_authentication_api.robot
 ```
 
-Tags: `api`, `browser`, `security`, `rate-limit`, `slow`, `known-gap`, `openai`, `no-openai-key`, `htaccess`, `build`.
+Tags: `api`, `browser`, `security`, `rate-limit`, `slow`, `known-gap`, `openai`, `no-openai-key`, `htaccess`, `build`, `import`.
 
 Robot is never run against the production site. The tests tagged `htaccess` (TC01-016, TC10-012, TC10-014,
 TC10-015) read `frontend/public/.htaccess` from `APP_DIR`, and TC10-016 builds the frontend into the gitignored
@@ -115,11 +118,22 @@ without a key and 404 with one, never reaching OpenAI). Tests that need the key 
 either says there is a key. The tests tagged `no-openai-key` (TC06-014, TC06-015, TC13-011) need a backend without a
 key and `BACKEND_HAS_OPENAI_KEY=false`; they fail with a clear message if the backend has a key after all, so a wrong
 flag can never cause a paid call.
-`RUN_REAL_AI=true` also runs the tests tagged `openai`, which make real, paid OpenAI calls (TC06-011, TC06-016..018).
+`RUN_REAL_AI=true` also runs the tests tagged `openai`, which make real, paid OpenAI calls (TC06-011, TC06-016..018,
+TC18-011..013, TC18-015, TC18-016, TC18-018..020, TC18-030..032). The no-key tests also include TC18-021, TC18-029
+and TC19-013.
+
+Import test files: `libraries/ImportTestFiles.py` builds every file in code from invented data (no real job search
+data is ever stored) and writes a copy to the gitignored `tmp/import-files/`. The spreadsheet conversion is checked
+exactly with the remap route, which applies a given column mapping without OpenAI.
+
+Job site names: TC01-027 and TC19-014 check that the legal texts and the UI contain no web address other than the
+service's own, the data protection authority's and example.com. This public repository lists no job site name.
 
 Network mocks: the Browser library has no request interception keyword, so `libraries/network_mocks.js`
 (loaded with `jsextension` in common.robot) adds `Mock Json Response`, `Get Mocked Request Bodies` and
-`Clear Mocked Responses`. Suite 13 uses them to test the posting draft path without OpenAI.
+`Clear Mocked Responses`, plus `Start Recording Requests`, `Get Recorded Requests` and `Stop Recording Requests`,
+which record real requests without changing them. Suites 13 and 19 use them to test the posting draft, import and
+delete paths without OpenAI.
 
 ## Expected findings (`known-gap`)
 

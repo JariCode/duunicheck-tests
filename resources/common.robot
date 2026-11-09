@@ -112,6 +112,16 @@ Htaccess Headers
     ${headers}=    Htaccess Set Headers    ${content}
     RETURN    ${headers}
 
+Text Should Name No Job Site
+    [Documentation]    The text must not name any job site by its web address: it may contain no web address
+    ...    (domain) other than the service's own, the data protection authority's and example.com. E-mail
+    ...    addresses are not counted. The repository is public, so no job site name is listed here.
+    [Arguments]    ${text}    ${where}
+    ${domains}=    Evaluate
+    ...    sorted(set(m.lower() for m in re.findall(r'(?<![@\\w.-])(?:[a-z0-9-]+\\.)+(?:fi|com|net|org|io|eu|se|jobs|app|dev|info)\\b', $text, re.I)) - {'jaricode.fi', 'tietosuoja.fi', 'example.com', 'duunicheck.onrender.com'})
+    ...    modules=re
+    Should Be Empty    ${domains}    msg=${where} names web addresses: ${domains}
+
 Application Count Of
     [Documentation]    Returns the number of applications the given player has.
     [Arguments]    ${user}
@@ -129,7 +139,7 @@ Response Should Not Contain Internal Fields
 
 Unique Name
     [Arguments]    ${label}=item
-    ${suffix}=    Generate Random String    8    [LOWERCASE][NUMBERS]
+    ${suffix}=    Generate Random String    8    [LOWER][NUMBERS]
     RETURN    ${PREFIX}-${label}-${suffix}
 
 Application Payload
@@ -342,7 +352,8 @@ Enter Verification Code If Asked
         ${done}=    Run Keyword And Return Status
         ...    Wait For Elements State    ${WORKSPACE}    visible    timeout=12s
         IF    ${done}    RETURN
-        Log    Clerk did not accept the code yet (attempt ${attempt}), trying again    WARN
+        # INFO, not WARN: a retry is normal Clerk behaviour and must not show up as an execution error.
+        Log    Clerk did not accept the code yet (attempt ${attempt}), trying again
     END
     Fail    Clerk did not accept the verification code after three attempts
 
@@ -369,7 +380,7 @@ Sign In
     ${submitted}=    Run Keyword And Return Status
     ...    Wait For Elements State    input[name="password"]    hidden    timeout=10s
     IF    not ${submitted}
-        Log    Password step was not submitted, submitting again    WARN
+        Log    Password step was not submitted, submitting again
         Click    .cl-formButtonPrimary
     END
     Enter Verification Code If Asked

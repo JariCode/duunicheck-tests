@@ -41,7 +41,40 @@ async function clearMockedResponses(page) {
   await page.unrouteAll({ behavior: 'ignoreErrors' })
 }
 
+// Requests seen by the recorder (method, url, body), oldest first. Unlike the mocks above, recorded requests
+// still reach the real server; preflights are not recorded.
+const recordedRequests = []
+const recordingPages = new WeakSet()
+let recordedPart = ''
+
+// Starts recording every request of the active page whose URL contains urlPart (one recorder per page;
+// a new call changes the part and forgets the earlier requests).
+async function startRecordingRequests(urlPart, page) {
+  recordedRequests.length = 0
+  recordedPart = String(urlPart)
+  if (recordingPages.has(page)) return
+  recordingPages.add(page)
+  page.on('request', (request) => {
+    if (request.method() === 'OPTIONS' || !recordedPart || !request.url().includes(recordedPart)) return
+    recordedRequests.push({ method: request.method(), url: request.url(), body: request.postData() || '' })
+  })
+}
+
+// Returns the recorded requests as a JSON list of {method, url, body}.
+async function getRecordedRequests() {
+  return JSON.stringify(recordedRequests)
+}
+
+// Stops recording (the listener stays but ignores everything) and forgets the requests.
+async function stopRecordingRequests() {
+  recordedPart = ''
+  recordedRequests.length = 0
+}
+
 exports.__esModule = true
+exports.startRecordingRequests = startRecordingRequests
+exports.getRecordedRequests = getRecordedRequests
+exports.stopRecordingRequests = stopRecordingRequests
 exports.mockJsonResponse = mockJsonResponse
 exports.getMockedRequestBodies = getMockedRequestBodies
 exports.clearMockedResponses = clearMockedResponses

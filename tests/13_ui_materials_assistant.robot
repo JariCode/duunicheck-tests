@@ -157,16 +157,19 @@ Posting draft option has its own section even without a chosen application
             Click    css=[role="option"]:has-text("ROBOT Draft Section Oy")
             Get Text    css=.application-picker-trigger    contains    ROBOT Draft Section Oy
         END
-        Get Text    ${DRAFT_SECTION} >> css=.application-picker-label    ==    Uusi hakemus ilmoituksesta
-        Get Text    ${DRAFT_SECTION} >> css=label    ==    Tee hakemuspohja ilmoituksesta
-        Get Text    ${DRAFT_SECTION} >> css=.permission-empty    ==    Liitä ilmoituksen teksti ja linkki viestikenttään. Pohja tallennetaan vasta, kun hyväksyt sen.
+        # The section now holds three tool options (posting draft, file import, delete search); the
+        # posting draft option is the first one. Suite 19 checks the other two.
+        Get Text    ${DRAFT_SECTION} >> css=.application-picker-label >> nth=0    ==    Uusi hakemus ilmoituksesta
+        Get Text    ${DRAFT_SECTION} >> css=label >> nth=0    ==    Tee hakemuspohja ilmoituksesta
+        Get Text    ${DRAFT_SECTION} >> css=.permission-empty >> nth=0    ==    Liitä ilmoituksen teksti ja linkki viestikenttään. Pohja tallennetaan vasta, kun hyväksyt sen.
         Get Checkbox State    ${DRAFT_TOGGLE}    ==    unchecked
         Get Property    ${DRAFT_TOGGLE}    disabled    ==    ${False}
     END
 
 Posting draft mode locks the application picker and the context options until it is turned off
     [Documentation]    TC13-010. Expected result: While "Tee hakemuspohja ilmoituksesta" is on, the
-    ...    application picker, every context option and the pasted posting field are disabled, the message
+    ...    application picker, every context option, the pasted posting field and the file import and delete
+    ...    search options are disabled, the message
     ...    field asks for the posting (16 000 characters) and can be sent without an application. Turning the
     ...    option off restores the picker, the options, their values and the normal message field (4000).
     ${app}=    Create Application As    A    company=ROBOT Draft Lock Oy
@@ -182,7 +185,12 @@ Posting draft mode locks the application picker and the context options until it
     Get Attribute    ${COMPOSER}    maxlength    ==    4000
     Turn Posting Draft Mode On
     Get Property    css=.application-picker-trigger    disabled    ==    ${True}
-    Get Element Count    css=.is-context-locked    ==    2
+    # Locked: the application picker, the context options and the two other tool options (file import, delete search).
+    Get Element Count    css=.is-context-locked    ==    4
+    Get Element Count    css=.application-picker.is-context-locked    ==    1
+    Get Element Count    css=.permission-list:not(.posting-draft-section).is-context-locked    ==    1
+    Get Element Count    ${DRAFT_SECTION} >> css=label.is-context-locked:has-text("Tee hakemukset tiedostosta")    ==    1
+    Get Element Count    ${DRAFT_SECTION} >> css=label.is-context-locked:has-text("Etsi poistettavat hakemukset")    ==    1
     ${states}=    Evaluate JavaScript    ${None}    () => Array.from(document.querySelectorAll('.permission-list:not(.posting-draft-section) input, textarea.posting-context')).map(e => e.disabled)
     Should Be Equal    ${states}    ${{ [True] * 6 }}
     Get Attribute    ${COMPOSER}    placeholder    ==    Liitä työpaikkailmoituksen teksti ja linkki…
@@ -232,7 +240,7 @@ Posting draft can be checked, edited and saved as an application
     ...    application in stage Kiinnostava with the edited values, the draft is locked and the confirmation
     ...    is shown. The new application is at once available in the application picker.
     [Teardown]    Clear Mocked Responses
-    ${suffix}=    Generate Random String    8    [LOWERCASE][NUMBERS]
+    ${suffix}=    Generate Random String    8    [LOWER][NUMBERS]
     ${company}=    Set Variable    ROBOT Mock ${suffix} Oy
     ${link}=    Set Variable    https://example.com/robot-mock-${suffix}
     Mock Posting Draft    ${company}    Testaaja    ${link}
@@ -291,7 +299,7 @@ Posting draft warns about an application with the same link
     ...    the link removes the warning; changing it back brings the warning back unconfirmed. A confirmed
     ...    save creates a second application with the same link.
     [Teardown]    Clear Mocked Responses
-    ${suffix}=    Generate Random String    8    [LOWERCASE][NUMBERS]
+    ${suffix}=    Generate Random String    8    [LOWER][NUMBERS]
     ${link}=    Set Variable    https://jobs.example.com/robot-dup-${suffix}
     ${existing}=    Create Application As    A    company=ROBOT Dup ${suffix} Oy    role=Vanha tehtävä    link=${link}
     ${server_duplicate}=    Create Dictionary    id=${existing}[id]    company=${existing}[company]    role=${existing}[role]
@@ -331,7 +339,7 @@ Posting draft layout does not scroll horizontally on small screens
     [Documentation]    TC13-014. The parse-posting response is replaced with test data (network mock).
     ...    Expected result: at 320, 360, 390 and 768 px the AI chat with the posting draft option on, and
     ...    the draft message with a long company name and the duplicate warning, fit the screen width.
-    ${suffix}=    Generate Random String    8    [LOWERCASE][NUMBERS]
+    ${suffix}=    Generate Random String    8    [LOWER][NUMBERS]
     ${link}=    Set Variable    https://example.com/robot-mobile-${suffix}/a-very-long-path-segment-without-any-spaces-to-wrap
     ${existing}=    Create Application As    A    company=ROBOT Mobile ${suffix} Oy    link=${link}
     ${server_duplicate}=    Create Dictionary    id=${existing}[id]    company=${existing}[company]    role=${existing}[role]

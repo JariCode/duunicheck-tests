@@ -118,13 +118,15 @@ class DuuniCheckLibrary:
     # HTTP
     # ------------------------------------------------------------------
     def send_request(self, method, path, json_body=None, raw_body=None, headers=None, form=None,
-                     files=None, token=None, origin=None, params=None, timeout=60, absolute_url=False):
+                     files=None, token=None, origin=None, params=None, timeout=60, absolute_url=False,
+                     follow_redirects=True):
         """Sends ONE request to the backend and returns an ApiResponse (no retries).
 
         token        bearer token string; None sends no Authorization header, '' sends an empty one.
         json_body    Python object sent as JSON.
         raw_body     string/bytes sent exactly as given (for malformed JSON etc).
         form, files  multipart upload data.
+        follow_redirects  False returns a 3xx response as it is (Location header readable).
         The Robot keyword "Api Request" in common.robot adds the player token and waits out 429.
         """
         url = path if as_bool(absolute_url) else self._cfg.get('API_URL', '').rstrip('/') + path
@@ -137,7 +139,8 @@ class DuuniCheckLibrary:
             request_headers['Authorization'] = 'Bearer '
         if origin:
             request_headers['Origin'] = origin
-        kwargs = {'headers': request_headers, 'params': params, 'timeout': float(timeout)}
+        kwargs = {'headers': request_headers, 'params': params, 'timeout': float(timeout),
+                  'allow_redirects': as_bool(follow_redirects, True)}
         if json_body is not None:
             kwargs['data'] = json.dumps(json_body, ensure_ascii=False).encode('utf-8')
             request_headers.setdefault('Content-Type', 'application/json')

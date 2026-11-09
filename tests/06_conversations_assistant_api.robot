@@ -338,7 +338,7 @@ Job posting parser finds the user's own application with the same link
     ...                existingApplication (id, company and role only). Nothing is saved.
     [Tags]    openai    slow
     [Setup]    Require Real OpenAI Calls
-    ${suffix}=    Generate Random String    8    [LOWERCASE][NUMBERS]
+    ${suffix}=    Generate Random String    8    [LOWER][NUMBERS]
     ${link}=    Set Variable    https://jobs.example.com/robot-${suffix}
     ${own}=    Create Application As    A    link=${link}
     ${before}=    Application Count Of    A
@@ -358,7 +358,7 @@ Job posting parser does not reveal another user's application with the same link
     ...                duplicate, and nothing of it appears in the response.
     [Tags]    openai    slow    isolation
     [Setup]    Require Real OpenAI Calls
-    ${suffix}=    Generate Random String    8    [LOWERCASE][NUMBERS]
+    ${suffix}=    Generate Random String    8    [LOWER][NUMBERS]
     ${link}=    Set Variable    https://careers.example.com/robot-${suffix}
     ${other}=    Create Application As    B    company=ROBOT-PRIVATE-B-${suffix}    link=${link}
     ${text}=    Robot Posting Text    ${link}

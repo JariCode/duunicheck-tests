@@ -31,6 +31,32 @@ Combined Csp
     ${csp}=    Set Variable    ${response.header('Content-Security-Policy')}${response.header('Content-Security-Policy-Report-Only')}
     RETURN    ${csp}
 
+Csp Header Name
+    [Documentation]    Name of the CSP header the published .htaccess sets. It is read from the file, not assumed:
+    ...    exactly one of Content-Security-Policy (enforced) and Content-Security-Policy-Report-Only must be set.
+    ${headers}=    Htaccess Headers
+    ${names}=    Evaluate    [name for name in ('Content-Security-Policy', 'Content-Security-Policy-Report-Only') if name in $headers]
+    Length Should Be    ${names}    1    msg=Expected exactly one CSP header in the published .htaccess, found ${names}
+    Log    The published .htaccess sets ${names}[0].
+    RETURN    ${names}[0]
+
+Csp Directive
+    [Documentation]    Returns the value of one directive of a CSP (without its name), or fails if it is missing.
+    [Arguments]    ${csp}    ${directive}
+    # Robot variables cannot be seen inside a generator, so they are passed to a function.
+    ${value}=    Evaluate    (lambda policy, name: next((part.strip()[len(name):].strip() for part in policy.split(';') if part.strip().split(' ')[0] == name), None))($csp, $directive)
+    Should Not Be Equal    ${value}    ${None}    msg=CSP has no ${directive} directive: ${csp}
+    RETURN    ${value}
+
+Wait For Preview
+    [Arguments]    ${url}
+    FOR    ${attempt}    IN RANGE    60
+        ${status}    ${response}=    Run Keyword And Ignore Error    Send Request    GET    ${url}    absolute_url=${True}    timeout=3    follow_redirects=${False}
+        IF    $status == 'PASS'    RETURN
+        Sleep    1s
+    END
+    Fail    vite preview did not answer at ${url}
+
 Published Csp
     [Documentation]    CSP of the published .htaccess: the enforced and the report-only header together.
     ${headers}=    Htaccess Headers
@@ -189,3 +215,77 @@ Frontend build contains no sensitive files
     ${forbidden}=    Forbidden Build Files    ${out}
     Should Be Empty    ${forbidden}    msg=The frontend build would publish: ${forbidden}
     [Teardown]    Remove Directory    ${CURDIR}${/}..${/}tmp${/}build-check    recursive=${True}
+
+Published .htaccess sets HSTS for one year with subdomains
+    [Documentation]    TC10-017. Checks the content of the published frontend/public/.htaccess. Expected result:
+    ...    "Header always set Strict-Transport-Security" is set exactly to "max-age=31536000; includeSubDomains".
+    [Tags]    frontend    htaccess
+    ${content}=    Published Htaccess
+    Should Match Regexp    ${content}    (?m)^\\s*Header\\s+always\\s+set\\s+Strict-Transport-Security\\s+"max-age=31536000; includeSubDomains"\\s*$
+    ${headers}=    Htaccess Headers
+    Should Be Equal    ${headers}[Strict-Transport-Security]    max-age=31536000; includeSubDomains
+
+Published CSP allows the real backend and has no placeholder or eval
+    [Documentation]    TC10-018. Checks the content of the published frontend/public/.htaccess. The header name is
+    ...    read from the file (Csp Header Name), not assumed. Expected result: connect-src allows
+    ...    https://duunicheck.onrender.com, the Clerk sources follow Clerk's CSP guide (*.protect.clerk.com in
+    ...    script-src, frame-src and, with the port wildcard, connect-src), the placeholder BACKEND-URL.example is
+    ...    gone from the whole file and the CSP has no 'unsafe-eval', no wildcard source "*" and object-src 'none'.
+    [Tags]    frontend    htaccess
+    ${name}=    Csp Header Name
+    ${headers}=    Htaccess Headers
+    ${csp}=    Set Variable    ${headers}[${name}]
+    ${connect}=    Csp Directive    ${csp}    connect-src
+    ${connect_sources}=    Evaluate    $connect.split()
+    Should Contain    ${connect_sources}    https://duunicheck.onrender.com
+    Should Contain    ${connect_sources}    https://*.protect.clerk.com:*
+    ${script}=    Csp Directive    ${csp}    script-src
+    Should Contain    ${{ $script.split() }}    https://*.protect.clerk.com
+    ${frame}=    Csp Directive    ${csp}    frame-src
+    Should Contain    ${{ $frame.split() }}    https://*.protect.clerk.com
+    ${objects}=    Csp Directive    ${csp}    object-src
+    Should Be Equal    ${objects}    'none'
+    Should Not Contain    ${csp}    'unsafe-eval'
+    ${wildcards}=    Evaluate    [source for part in $csp.split(';') for source in part.split()[1:] if source == '*']
+    Should Be Empty    ${wildcards}
+    ${content}=    Published Htaccess
+    Should Not Contain    ${content}    BACKEND-URL.example
+
+Vite preview sends the .htaccess headers and redirects the base path without a trailing slash
+    [Documentation]    TC10-019. Builds the frontend into the gitignored tmp/ folder with VITE_BASE_PATH=/robot-base/
+    ...    and VITE_API_URL=http://localhost:5000 (environment variables of the build and preview processes only,
+    ...    no .env file is read or changed) and starts vite preview on port 4317. Expected result: the page
+    ...    /robot-base/ is served with every header of the published .htaccess unchanged, except that the CSP
+    ...    connect-src also allows the local API origin http://localhost:5000; /robot-base answers 301 to
+    ...    /robot-base/ and keeps the query string; the base path with the slash is not redirected.
+    [Tags]    frontend    build
+    Require Config    APP_DIR
+    ${frontend}=    Normalize Path    ${APP_DIR}${/}frontend
+    ${vite}=    Normalize Path    ${frontend}${/}node_modules${/}vite${/}bin${/}vite.js
+    ${out}=    Normalize Path    ${CURDIR}${/}..${/}tmp${/}preview-check
+    ${build}=    Run Process    node    ${vite}    build    --outDir    ${out}    --emptyOutDir    cwd=${frontend}
+    ...    timeout=180s    stderr=STDOUT    env:VITE_BASE_PATH=/robot-base/    env:VITE_API_URL=http://localhost:5000
+    Should Be Equal As Integers    ${build.rc}    0    msg=Frontend build failed: ${build.stdout}[-1500:]
+    Start Process    node    ${vite}    preview    --outDir    ${out}    --port    4317    --strictPort    cwd=${frontend}
+    ...    alias=preview    env:VITE_BASE_PATH=/robot-base/    env:VITE_API_URL=http://localhost:5000
+    Wait For Preview    http://localhost:4317/robot-base/
+    ${page}=    Send Request    GET    http://localhost:4317/robot-base/    absolute_url=${True}    follow_redirects=${False}
+    Status Should Be    ${page}    200
+    ${headers}=    Htaccess Headers
+    ${name}=    Csp Header Name
+    FOR    ${header}    ${value}    IN    &{headers}
+        IF    $header == $name
+            ${expected}=    Evaluate    re.sub(r'(^|;\\s*)connect-src([^;]*)', lambda m: m.group(0) + ' http://localhost:5000', $value, count=1)    modules=re
+            Should Be Equal    ${page.header('${header}')}    ${expected}    msg=Preview ${header} differs
+        ELSE
+            Should Be Equal    ${page.header('${header}')}    ${value}    msg=Preview ${header} differs from .htaccess
+        END
+    END
+    ${redirect}=    Send Request    GET    http://localhost:4317/robot-base    absolute_url=${True}    follow_redirects=${False}
+    Status Should Be    ${redirect}    301
+    Should Be Equal    ${redirect.header('Location')}    /robot-base/
+    ${with_query}=    Send Request    GET    http://localhost:4317/robot-base?view=jobs&x=1    absolute_url=${True}    follow_redirects=${False}
+    Status Should Be    ${with_query}    301
+    Should Be Equal    ${with_query.header('Location')}    /robot-base/?view=jobs&x=1
+    [Teardown]    Run Keywords    Terminate All Processes    kill=${True}
+    ...    AND    Remove Directory    ${CURDIR}${/}..${/}tmp${/}preview-check    recursive=${True}

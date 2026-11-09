@@ -115,9 +115,10 @@ Required fields company and role must not be empty
         Status Should Be    ${response}    400
     END
 
-Status must be one of the four allowed values
-    [Documentation]    TC03-011. Expected result: Status must be one of the four allowed values.
-    FOR    ${status}    IN    kiinnostava    Odottaa vastausta    Haastattelu    Tarjous    Hyväksytty    ${EMPTY}    <script>    ${123}
+Status must be one of the five allowed values
+    [Documentation]    TC03-011. Expected result: Status must be one of the five allowed values (Kiinnostava,
+    ...    Lähetetty, Haastattelu sovittu, Hyväksytty, Hylätty); other spellings, old names and other types are refused.
+    FOR    ${status}    IN    kiinnostava    hyväksytty    Hyväksytty${SPACE}    Accepted    Odottaa vastausta    Haastattelu    Tarjous    ${EMPTY}    <script>    ${123}
         ${payload}=    Application Payload    status=${status}
         ${response}=    Api Request    POST    /api/applications    user=A    json_body=${payload}
         Status Should Be    ${response}    400
@@ -126,7 +127,7 @@ Status must be one of the four allowed values
     Remove From Dictionary    ${payload}    status
     ${missing}=    Api Request    POST    /api/applications    user=A    json_body=${payload}
     Status Should Be    ${missing}    400
-    FOR    ${status}    IN    Kiinnostava    Lähetetty    Haastattelu sovittu    Hylätty
+    FOR    ${status}    IN    Kiinnostava    Lähetetty    Haastattelu sovittu    Hyväksytty    Hylätty
         ${payload}=    Application Payload    status=${status}
         ${response}=    Api Request    POST    /api/applications    user=A    json_body=${payload}
         Status Should Be    ${response}    201
@@ -349,3 +350,29 @@ Application limit of 500 per user is enforced
     ${over}=    Api Request    POST    /api/applications    user=A    json_body=${payload}
     Status Should Be    ${over}    413
     [Teardown]    Clean Up User A
+
+Status Hyväksytty is stored, returned and can be set with an update
+    [Documentation]    TC03-029. Expected result: an application created with status Hyväksytty and a
+    ...    Hyväksytty event is stored and returned as such in the own list, an application in stage Lähetetty
+    ...    can be updated to Hyväksytty, and an unknown status in an update is still refused with 400 and
+    ...    leaves the stored status unchanged.
+    &{event}=    Create Dictionary    id=1    type=Hyväksytty    date=2026-04-01    note=Työsopimus allekirjoitettu
+    ${created}=    Create Application As    A    status=Hyväksytty    respondedAt=2026-04-01    events=${{ [$event] }}
+    Should Be Equal    ${created}[status]    Hyväksytty
+    Should Be Equal    ${created}[events][0][type]    Hyväksytty
+    ${list}=    Api Request    GET    /api/applications    user=A
+    ${stored}=    Evaluate    [a for a in $list.json if a['id'] == $created['id']][0]
+    Should Be Equal    ${stored}[status]    Hyväksytty
+    Should Be Equal    ${stored}[respondedAt]    2026-04-01
+    ${sent}=    Create Application As    A    status=Lähetetty
+    ${payload}=    Application Payload    company=${sent}[company]    role=${sent}[role]    status=Hyväksytty
+    ${updated}=    Api Request    PUT    /api/applications/${sent}[id]    user=A    json_body=${payload}
+    Status Should Be    ${updated}    200
+    Should Be Equal    ${updated.json}[status]    Hyväksytty
+    ${payload}=    Application Payload    company=${sent}[company]    role=${sent}[role]    status=Tarjous hyväksytty
+    ${refused}=    Api Request    PUT    /api/applications/${sent}[id]    user=A    json_body=${payload}
+    Status Should Be    ${refused}    400
+    Error Response Should Be Safe    ${refused}
+    ${list}=    Api Request    GET    /api/applications    user=A
+    ${after}=    Evaluate    [a for a in $list.json if a['id'] == $sent['id']][0]
+    Should Be Equal    ${after}[status]    Hyväksytty

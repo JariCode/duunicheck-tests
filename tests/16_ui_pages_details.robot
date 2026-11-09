@@ -48,6 +48,14 @@ Finish Printing
     Evaluate JavaScript    ${None}    () => window.dispatchEvent(new Event('afterprint'))
     Wait For Elements State    css=.print-document    detached
 
+Delete Application Named
+    [Documentation]    Deletes user A's applications with the given company (teardown helper).
+    [Arguments]    ${company}
+    ${api}=    Api Request    GET    /api/applications    user=A
+    FOR    ${app}    IN    @{api.json}
+        IF    $app['company'] == $company    Api Request    DELETE    /api/applications/${app}[id]    user=A
+    END
+
 Application From Api
     [Arguments]    ${company}
     ${api}=    Api Request    GET    /api/applications    user=A
@@ -57,12 +65,17 @@ Application From Api
 
 *** Test Cases ***
 Dashboard shows correct counts and the recent applications list
-    [Documentation]    TC16-001. Expected result: Dashboard metrics match the stored applications and "Koko lista" opens the list.
+    [Documentation]    TC16-001. Expected result: Dashboard metrics match the stored applications and "Koko lista"
+    ...    opens the list. The five metrics are in the order Hakemuksia yhteensä, Lähetetty, Haastattelut,
+    ...    Hyväksytyt, Hylätyt, and Hyväksytyt is 0 because no application is accepted.
     Go To Section    Yleiskatsaus
     Get Text    css=.metrics    contains    Hakemuksia yhteensä
+    ${labels}=    Evaluate JavaScript    ${None}    () => Array.from(document.querySelectorAll('.metrics .metric')).map(m => m.querySelector('div > span').textContent.trim())
+    Should Be Equal    ${labels}    ${{ ['Hakemuksia yhteensä', 'Lähetetty', 'Haastattelut', 'Hyväksytyt', 'Hylätyt'] }}
     Get Text    css=.metric:has-text("Hakemuksia yhteensä") b    ==    3
     Get Text    css=.metric:has-text("Lähetetty") b    ==    1
     Get Text    css=.metric:has-text("Haastattelut") b    ==    1
+    Get Text    css=.metric:has-text("Hyväksytyt") b    ==    0
     Get Text    css=.metric:has-text("Hylätyt") b    ==    1
     Get Element Count    css=.recent .job-row    ==    3
     Click    css=.see-all
@@ -420,3 +433,101 @@ Calendar day entry and the company name in the list open the application details
     Click    css=.job-row:has-text("ROBOT Gamma Oy") >> button.company-button
     Wait For Elements State    css=.detail-card:has-text("ROBOT Gamma Oy")    visible
     Close Details
+
+Status Hyväksytty can be chosen in the form, the list, the stage filter and the timeline in the right order
+    [Documentation]    TC16-031. Expected result: the status options of the application form, of the status
+    ...    picker of a list row and of the timeline, the stage filter and the timeline legend all list the
+    ...    stages in the order Kiinnostava, Lähetetty, Haastattelu sovittu, Hyväksytty, Hylätty. An application
+    ...    saved with Hyväksytty in the form is stored with that status, the list picker shows it in the
+    ...    accepted colour class, can change it away and back, and the stage filter Hyväksytty shows only it.
+    ${stages}=    Create List    Kiinnostava    Lähetetty    Haastattelu sovittu    Hyväksytty    Hylätty
+    ${company}=    Set Variable    ROBOT Hyväksytty Lomake Oy
+    Go To Section    Hakemukset
+    Click    text=＋ Lisää hakemus >> nth=0
+    Wait For Elements State    text=Tallenna hakemus →    visible
+    ${form_select}=    Set Variable    xpath=//label[contains(., "Hakemuksen vaihe")]//select
+    ${options}=    Get Select Options    ${form_select}
+    ${labels}=    Evaluate    [option['label'] for option in $options]
+    Should Be Equal    ${labels}    ${stages}
+    Fill Text    xpath=//label[contains(., "Yritys")]//input    ${company}
+    Fill Text    xpath=//label[contains(., "Tehtävä")]//input    Hyväksyjä
+    Select Options By    ${form_select}    label    Hyväksytty
+    Click    text=Tallenna hakemus →
+    Wait For Elements State    css=.job-row:has-text("${company}")    visible
+    ${saved}=    Application From Api    ${company}
+    Should Be Equal    ${saved}[status]    Hyväksytty
+    ${picker}=    Set Variable    css=select[aria-label="Vaihda hakemuksen ${company} vaihe"]
+    ${options}=    Get Select Options    ${picker}
+    ${labels}=    Evaluate    [option['label'] for option in $options]
+    Should Be Equal    ${labels}    ${stages}
+    Get Attribute    ${picker}    class    contains    accepted
+    Select Options By    ${picker}    label    Lähetetty
+    Wait For Condition    Attribute    ${picker}    class    contains    sent
+    Select Options By    ${picker}    label    Hyväksytty
+    Wait For Condition    Attribute    ${picker}    class    contains    accepted
+    Sleep    1s
+    ${saved}=    Application From Api    ${company}
+    Should Be Equal    ${saved}[status]    Hyväksytty
+    ${filter}=    Set Variable    css=select[aria-label="Suodata vaiheen mukaan"]
+    ${options}=    Get Select Options    ${filter}
+    ${labels}=    Evaluate    [option['label'] for option in $options]
+    Should Be Equal    ${labels}    ${{ ['Kaikki vaiheet'] + $stages }}
+    Select Options By    ${filter}    label    Hyväksytty
+    Get Element Count    css=.job-row    ==    1
+    Get Text    css=.job-row    contains    ${company}
+    Select Options By    ${filter}    label    Kaikki vaiheet
+    Go To Section    Eteneminen
+    ${legend}=    Evaluate JavaScript    ${None}    () => Array.from(document.querySelectorAll('.timeline-legend span')).map(s => s.textContent.trim())
+    Should Be Equal    ${legend}    ${stages}
+    ${row_picker}=    Set Variable    css=.timeline-row:has-text("${company}") select
+    ${options}=    Get Select Options    ${row_picker}
+    ${labels}=    Evaluate    [option['label'] for option in $options]
+    Should Be Equal    ${labels}    ${stages}
+    Get Element Count    css=.timeline-row:has-text("${company}") .timeline-end.accepted    ==    1
+    [Teardown]    Delete Application Named    ${company}
+
+Overview counts accepted applications in every theme without horizontal scrolling on phones
+    [Documentation]    TC16-032. An application with status Hyväksytty and a Hyväksytty event dated today is added.
+    ...    Expected result: in the default, dark and light theme the metric "Hyväksytyt" shows the number of
+    ...    accepted applications of the API, the chart legend lists Hakemuksia, Lähetetty, Haastattelut,
+    ...    Hyväksytyt, Hylätyt, every month has an accepted bar and this month's title counts the accepted
+    ...    application, the accepted status picker has its own colour different from the other stages, and at
+    ...    320, 360, 390 and 768 px the overview, the list and the timeline do not scroll horizontally.
+    ${today}=    Get Current Date    result_format=%Y-%m-%d
+    &{event}=    Create Dictionary    id=1    type=Hyväksytty    date=${today}    note=${EMPTY}
+    Create Application As    A    company=ROBOT Hyväksytty Teema Oy    status=Hyväksytty    added=${today}
+    ...    respondedAt=${today}    events=${{ [$event] }}
+    ${list}=    Api Request    GET    /api/applications    user=A
+    ${accepted}=    Evaluate    str(len([a for a in $list.json if a['status'] == 'Hyväksytty' or any(e['type'] == 'Hyväksytty' for e in a['events'])]))
+    FOR    ${theme}    IN    default    dark    light
+        Api Request    PUT    /api/settings    user=A    json_body=${{ {'theme': $theme} }}
+        Reload
+        Wait For Workspace
+        Get Attribute    css=html    data-duunicheck-theme    ==    ${theme}
+        Go To Section    Yleiskatsaus
+        Get Text    css=.metric:has-text("Hyväksytyt") b    ==    ${accepted}
+        Wait For Elements State    css=.metric:has-text("Hyväksytyt")    visible
+        ${legend}=    Evaluate JavaScript    ${None}    () => Array.from(document.querySelectorAll('.legend span')).map(s => s.textContent.trim())
+        Should Be Equal    ${legend}    ${{ ['Hakemuksia', 'Lähetetty', 'Haastattelut', 'Hyväksytyt', 'Hylätyt'] }}
+        Get Element Count    css=.live-chart-group .bar-accepted    ==    6
+        Get Attribute    css=.live-chart-group >> nth=-1    title    contains    1 hyväksytty
+        Go To Section    Hakemukset
+        ${colours}=    Evaluate JavaScript    ${None}
+        ...    () => { const look = (e) => getComputedStyle(e).backgroundColor + '|' + getComputedStyle(e).color; return { accepted: Array.from(document.querySelectorAll('.status-picker.accepted')).map(look), others: Array.from(document.querySelectorAll('.status-picker:not(.accepted)')).map(look) } }
+        Should Not Be Empty    ${colours}[accepted]
+        Should Not Be Empty    ${colours}[others]
+        FOR    ${colour}    IN    @{colours}[accepted]
+            Should Not Contain    ${colours}[others]    ${colour}    msg=Theme ${theme}: the accepted status has the same colours as another stage
+        END
+    END
+    FOR    ${width}    IN    @{MOBILE_WIDTHS}
+        Open Mobile Workspace    ${width}
+        FOR    ${section}    IN    Yleiskatsaus    Hakemukset    Eteneminen
+            Go To Section    ${section}
+            Page Should Not Scroll Horizontally
+        END
+        Close Mobile Workspace
+    END
+    [Teardown]    Run Keywords    Close Mobile Workspace
+    ...    AND    Api Request    PUT    /api/settings    user=A    json_body=${{ {'theme': 'default'} }}
+    ...    AND    Delete Application Named    ROBOT Hyväksytty Teema Oy
