@@ -73,7 +73,7 @@ ehthumbs.db
 tmp/
 temp/
 
-# ===== Claude Code settings and skills, local run scripts (kept out of the repository) =====
+# ===== Local editor settings and run scripts (kept out of the repository) =====
 .claude/
 run-tests.ps1
 # Manual test list (kept locally)

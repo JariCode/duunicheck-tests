@@ -270,7 +270,7 @@ Job posting parser answers 503 without an OpenAI key
     ${longest}=    Evaluate    'p' * 16000
     ${plain}=    Parse Posting    A    ${text}
     Safe Error Should Be    ${plain}    503    ${AI_NOT_CONFIGURED_ERROR}
-    ${with_link}=    Parse Posting    A    ${text}    https://duunitori.fi/tyopaikat/tyo/robot-123
+    ${with_link}=    Parse Posting    A    ${text}    https://jobs.example.com/robot-123
     Safe Error Should Be    ${with_link}    503    ${AI_NOT_CONFIGURED_ERROR}
     ${long}=    Parse Posting    A    ${longest}    http://example.com/job
     Safe Error Should Be    ${long}    503    ${AI_NOT_CONFIGURED_ERROR}
@@ -339,7 +339,7 @@ Job posting parser finds the user's own application with the same link
     [Tags]    openai    slow
     [Setup]    Require Real OpenAI Calls
     ${suffix}=    Generate Random String    8    [LOWERCASE][NUMBERS]
-    ${link}=    Set Variable    https://duunitori.fi/tyopaikat/tyo/robot-${suffix}
+    ${link}=    Set Variable    https://jobs.example.com/robot-${suffix}
     ${own}=    Create Application As    A    link=${link}
     ${before}=    Application Count Of    A
     ${text}=    Robot Posting Text    ${link}
@@ -359,7 +359,7 @@ Job posting parser does not reveal another user's application with the same link
     [Tags]    openai    slow    isolation
     [Setup]    Require Real OpenAI Calls
     ${suffix}=    Generate Random String    8    [LOWERCASE][NUMBERS]
-    ${link}=    Set Variable    https://tyomarkkinatori.fi/henkiloasiakkaat/avoimet-tyopaikat/robot-${suffix}
+    ${link}=    Set Variable    https://careers.example.com/robot-${suffix}
     ${other}=    Create Application As    B    company=ROBOT-PRIVATE-B-${suffix}    link=${link}
     ${text}=    Robot Posting Text    ${link}
     ${response}=    Parse Posting    A    ${text}    ${link}

@@ -292,7 +292,7 @@ Posting draft warns about an application with the same link
     ...    save creates a second application with the same link.
     [Teardown]    Clear Mocked Responses
     ${suffix}=    Generate Random String    8    [LOWERCASE][NUMBERS]
-    ${link}=    Set Variable    https://duunitori.fi/tyopaikat/tyo/robot-dup-${suffix}
+    ${link}=    Set Variable    https://jobs.example.com/robot-dup-${suffix}
     ${existing}=    Create Application As    A    company=ROBOT Dup ${suffix} Oy    role=Vanha tehtävä    link=${link}
     ${server_duplicate}=    Create Dictionary    id=${existing}[id]    company=${existing}[company]    role=${existing}[role]
     Mock Posting Draft    ROBOT Dup Uusi ${suffix} Oy    Uusi tehtävä    ${link}    ${server_duplicate}
