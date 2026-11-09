@@ -57,6 +57,24 @@ Correctly signed non-deletion event is accepted without side effects
     ${response}=    Post Webhook    ${UPDATED_EVENT}    ${headers}
     Status Should Be    ${response}    204
 
+Signed webhook is accepted without Clerk's middleware or a redirect
+    [Documentation]    TC11-016. Clerk's middleware no longer runs on the webhook route. Expected result: a correctly
+    ...    signed non-deletion event is accepted with 204, also when the request carries browser page headers and
+    ...    Clerk's __client_uat cookie, and the answer has no 3xx status, no Location and no x-clerk-auth-status
+    ...    header (redirects are not followed).
+    Require Webhook Secret
+    FOR    ${with_cookie}    IN    ${False}    ${True}
+        ${headers}=    Sign Webhook    ${UPDATED_EVENT}
+        IF    ${with_cookie}
+            Set To Dictionary    ${headers}    Cookie=__client_uat=1700000000    Sec-Fetch-Dest=document
+            ...    Sec-Fetch-Mode=navigate    Accept=text/html,*/*;q=0.8
+        END
+        ${response}=    Send Request    POST    ${WEBHOOK_PATH}    raw_body=${UPDATED_EVENT}    headers=${headers}    follow_redirects=${False}
+        Status Should Be    ${response}    204
+        Should Be Empty    ${response.header('Location')}
+        Should Be Empty    ${response.header('x-clerk-auth-status')}
+    END
+
 Tampered body with a valid signature of another body is rejected
     [Documentation]    TC11-006. Expected result: Tampered body with a valid signature of another body is rejected.
     Require Webhook Secret

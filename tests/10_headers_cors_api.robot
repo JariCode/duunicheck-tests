@@ -31,6 +31,56 @@ Combined Csp
     ${csp}=    Set Variable    ${response.header('Content-Security-Policy')}${response.header('Content-Security-Policy-Report-Only')}
     RETURN    ${csp}
 
+Csp Directives
+    [Documentation]    Splits a CSP into {directive: value}. A repeated directive fails, because browsers ignore the repeat.
+    [Arguments]    ${csp}
+    ${parts}=    Evaluate    [part.strip().split(None, 1) for part in $csp.split(';') if part.strip()]
+    ${names}=    Evaluate    [part[0] for part in $parts]
+    List Should Not Contain Duplicates    ${names}    msg=CSP repeats a directive: ${csp}
+    ${directives}=    Evaluate    {part[0]: (part[1].strip() if len(part) > 1 else '') for part in $parts}
+    RETURN    ${directives}
+
+Security Header Samples
+    [Documentation]    One response of each kind the backend gives: health check, authenticated list, 401, 404
+    ...    and a CORS preflight from the allowed origin.
+    ${health}=    Api Request    GET    /api/health
+    ${list}=    Api Request    GET    /api/applications    user=A
+    ${unauthorized}=    Api Request    GET    /api/applications
+    ${not_found}=    Api Request    GET    /api/nope    user=A
+    ${preflight}=    Preflight    ${ALLOWED_ORIGIN}
+    ${root}=    Api Request    GET    /
+    Status Should Be    ${health}    200
+    Status Should Be    ${list}    200
+    Status Should Be    ${unauthorized}    401
+    Status Should Be    ${not_found}    404
+    Status Should Be    ${root}    404
+    &{responses}=    Create Dictionary    health check=${health}    authenticated list=${list}    401=${unauthorized}
+    ...    404=${not_found}    preflight=${preflight}    root 404=${root}
+    RETURN    ${responses}
+
+Browser Page Headers
+    [Documentation]    Headers a browser sends when the address is opened as a page. With signed_in the request also
+    ...    carries Clerk's __client_uat cookie, as from a browser that has signed in to the app before; that is
+    ...    the case in which Clerk's middleware would redirect to its handshake.
+    [Arguments]    ${signed_in}=${False}
+    &{headers}=    Create Dictionary    Accept=text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+    ...    Sec-Fetch-Dest=document    Sec-Fetch-Mode=navigate    Sec-Fetch-Site=none    Sec-Fetch-User=?1
+    ...    Upgrade-Insecure-Requests=1    User-Agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) RobotFramework
+    IF    ${signed_in}    Set To Dictionary    ${headers}    Cookie=__client_uat=1700000000
+    RETURN    ${headers}
+
+Response Should Not Redirect
+    [Documentation]    No 3xx status and no Location. With clerk_headers=${True} (public addresses, where Clerk must not
+    ...    run at all) also none of Clerk's auth headers. On signed-in routes Clerk runs on purpose and reports
+    ...    x-clerk-auth-status signed-out for a request without a token, which is not a redirect.
+    [Arguments]    ${response}    ${where}    ${clerk_headers}=${True}
+    Should Be True    not 300 <= ${response.status} < 400    msg=${where} answered ${response.status} (redirect to ${response.header('Location')})
+    Should Be Empty    ${response.header('Location')}    msg=${where} has a Location header
+    IF    not ${clerk_headers}    RETURN
+    FOR    ${name}    IN    x-clerk-auth-status    x-clerk-auth-reason    x-clerk-auth-message    x-clerk-redirect-to
+        Should Be Empty    ${response.header('${name}')}    msg=${where} has the Clerk header ${name}: ${response.header('${name}')}
+    END
+
 Csp Header Name
     [Documentation]    Name of the CSP header the published .htaccess sets. It is read from the file, not assumed:
     ...    exactly one of Content-Security-Policy (enforced) and Content-Security-Policy-Report-Only must be set.
@@ -67,17 +117,54 @@ Published Csp
 
 *** Test Cases ***
 Backend sets the standard Helmet security headers
-    [Documentation]    TC10-001. Expected result: Backend sets the standard Helmet security headers.
+    [Documentation]    TC10-001. Expected result: the backend serves only JSON and file downloads, so its CSP lets
+    ...    nothing load or frame it: exactly the directives default-src 'none', base-uri 'none', form-action 'none'
+    ...    and frame-ancestors 'none'. X-Frame-Options is DENY, and the other Helmet headers (nosniff, HSTS,
+    ...    Referrer-Policy no-referrer, X-XSS-Protection 0, Cross-Origin-Resource-Policy cross-origin) are set.
     ${response}=    Api Request    GET    /api/health
     Header Should Be Present    ${response}    X-Content-Type-Options
     Should Be Equal    ${response.header('X-Content-Type-Options')}    nosniff
-    Header Should Be Present    ${response}    X-Frame-Options
+    Should Be Equal    ${response.header('X-Frame-Options')}    DENY
     Header Should Be Present    ${response}    Strict-Transport-Security
     Header Should Be Present    ${response}    Content-Security-Policy
-    Should Contain    ${response.header('Content-Security-Policy')}    default-src 'self'
+    ${directives}=    Csp Directives    ${response.header('Content-Security-Policy')}
+    Should Be Equal    ${directives}    ${{ {'default-src': "'none'", 'base-uri': "'none'", 'form-action': "'none'", 'frame-ancestors': "'none'"} }}
+    Should Be Empty    ${response.header('Content-Security-Policy-Report-Only')}
     Should Be Equal    ${response.header('Referrer-Policy')}    no-referrer
     Should Be Equal    ${response.header('X-XSS-Protection')}    0
     Should Be Equal    ${response.header('Cross-Origin-Resource-Policy')}    cross-origin
+
+Backend sends a Permissions-Policy that switches off device features
+    [Documentation]    TC10-020. Expected result: the health check, an authenticated API response, a 401, a 404 of
+    ...    an /api route, the 404 of GET / and a CORS preflight all carry Permissions-Policy with camera, microphone, geolocation, payment and usb
+    ...    switched off (empty allow list), and no feature is allowed for any origin.
+    ${responses}=    Security Header Samples
+    FOR    ${name}    ${response}    IN    &{responses}
+        ${policy}=    Set Variable    ${response.header('Permissions-Policy')}
+        Should Not Be Empty    ${policy}    msg=${name}: Permissions-Policy is missing
+        ${features}=    Evaluate    {part.split('=', 1)[0].strip(): part.split('=', 1)[1].strip() for part in $policy.split(',') if '=' in part}
+        FOR    ${feature}    IN    camera    microphone    geolocation    payment    usb
+            Should Be Equal    ${features}[${feature}]    ()    msg=${name}: ${feature} is not switched off in "${policy}"
+        END
+        ${allowed}=    Evaluate    [name for name, value in $features.items() if value != '()']
+        Should Be Empty    ${allowed}    msg=${name}: features allowed in "${policy}": ${allowed}
+    END
+
+Every backend response forbids caching, the health check included
+    [Documentation]    TC10-021. Expected result: Cache-Control contains no-store on every kind of backend response:
+    ...    the health check, an authenticated list, a 401, a 404 of an /api route, the 404 of GET /, a 400
+    ...    validation error, a CORS preflight and a file download.
+    ${responses}=    Security Header Samples
+    ${invalid}=    Api Request    POST    /api/applications    user=A    json_body=${{ {} }}
+    Status Should Be    ${invalid}    400
+    ${file}=    Upload Text File As    A    cv    ${PREFIX}-cache.txt    Cache check
+    ${download}=    Api Request    GET    /api/files/${file}[id]/download    user=A
+    Status Should Be    ${download}    200
+    Set To Dictionary    ${responses}    validation error=${invalid}    file download=${download}
+    FOR    ${name}    ${response}    IN    &{responses}
+        ${directives}=    Evaluate    [part.strip().lower() for part in $response.header('Cache-Control').split(',')]
+        Should Contain    ${directives}    no-store    msg=${name}: Cache-Control is "${response.header('Cache-Control')}"
+    END
 
 Backend does not reveal the server technology
     [Documentation]    TC10-002. Expected result: Backend does not reveal the server technology.
@@ -216,14 +303,62 @@ Frontend build contains no sensitive files
     Should Be Empty    ${forbidden}    msg=The frontend build would publish: ${forbidden}
     [Teardown]    Remove Directory    ${CURDIR}${/}..${/}tmp${/}build-check    recursive=${True}
 
-Published .htaccess sets HSTS for one year with subdomains
+Public backend addresses opened as a browser page are not redirected to Clerk
+    [Documentation]    TC10-022. GET / and GET /api/health are sent with the headers of a browser page request
+    ...    (Accept text/html, Sec-Fetch-Dest document, Sec-Fetch-Mode navigate), once without cookies and once with
+    ...    Clerk's __client_uat cookie, and redirects are not followed. Expected result: no 3xx answer, no Location
+    ...    and no x-clerk-auth-status (or other Clerk handshake) header; / answers 404 JSON with the app's message
+    ...    "Rajapintaa ei löytynyt." and /api/health answers 200 JSON {"status": "ok"}.
+    FOR    ${signed_in}    IN    ${False}    ${True}
+        ${headers}=    Browser Page Headers    ${signed_in}
+        ${root}=    Send Request    GET    /    headers=${headers}    follow_redirects=${False}
+        Response Should Not Redirect    ${root}    GET / (cookie ${signed_in})
+        Safe Error Should Be    ${root}    404    Rajapintaa ei löytynyt.
+        Should Contain    ${root.header('Content-Type')}    application/json
+        ${health}=    Send Request    GET    /api/health    headers=${headers}    follow_redirects=${False}
+        Response Should Not Redirect    ${health}    GET /api/health (cookie ${signed_in})
+        Status Should Be    ${health}    200
+        Should Contain    ${health.header('Content-Type')}    application/json
+        Should Be Equal    ${health.json}    ${{ {'status': 'ok'} }}
+    END
+
+Signed-in API routes still need a token and work with one
+    [Documentation]    TC10-023. Clerk now runs only on the signed-in /api routes. Expected result: without a token
+    ...    every protected route (lists, settings, a conversation, the assistant, bulk delete, file import) answers
+    ...    401 with the safe JSON "Kirjautuminen vaaditaan." and no redirect (no 3xx, no Location; Clerk's
+    ...    x-clerk-auth-status is allowed here because Clerk runs on these routes); with user A's token the list routes and
+    ...    the settings answer 200 JSON.
+    @{protected}=    Create List
+    ...    GET /api/applications    GET /api/cvs    GET /api/templates    GET /api/files    GET /api/settings
+    ...    GET /api/conversations/${MISSING_ID}    POST /api/assistant/suggest    POST /api/assistant/find-applications
+    ...    POST /api/applications/bulk-delete    POST /api/assistant/import-applications
+    FOR    ${route}    IN    @{protected}
+        ${method}    ${path}=    Split String    ${route}    ${SPACE}    1
+        ${response}=    Send Request    ${method}    ${path}    json_body=${{ {} if $method == 'POST' else None }}    follow_redirects=${False}
+        Response Should Not Redirect    ${response}    ${route}    clerk_headers=${False}
+        Safe Error Should Be    ${response}    401    Kirjautuminen vaaditaan.
+    END
+    FOR    ${path}    IN    /api/applications    /api/cvs    /api/templates    /api/files    /api/settings
+        ${response}=    Api Request    GET    ${path}    user=A
+        Status Should Be    ${response}    200
+        Should Contain    ${response.header('Content-Type')}    application/json
+    END
+
+Published .htaccess sets HSTS for one year without subdomains
     [Documentation]    TC10-017. Checks the content of the published frontend/public/.htaccess. Expected result:
-    ...    "Header always set Strict-Transport-Security" is set exactly to "max-age=31536000; includeSubDomains".
+    ...    "Header always set Strict-Transport-Security" is set exactly once and exactly to "max-age=31536000", the
+    ...    same as the other applications of the domain: no includeSubDomains and no preload in any directive line
+    ...    (comments may explain why they are left out).
     [Tags]    frontend    htaccess
     ${content}=    Published Htaccess
-    Should Match Regexp    ${content}    (?m)^\\s*Header\\s+always\\s+set\\s+Strict-Transport-Security\\s+"max-age=31536000; includeSubDomains"\\s*$
+    ${lines}=    Get Regexp Matches    ${content}    (?im)^\\s*Header\\s+(?:always\\s+)?set\\s+Strict-Transport-Security\\b.*$
+    Length Should Be    ${lines}    1    msg=Expected exactly one Strict-Transport-Security directive, found ${lines}
+    Should Match Regexp    ${lines}[0]    ^\\s*Header\\s+always\\s+set\\s+Strict-Transport-Security\\s+"max-age=31536000"\\s*$
     ${headers}=    Htaccess Headers
-    Should Be Equal    ${headers}[Strict-Transport-Security]    max-age=31536000; includeSubDomains
+    Should Be Equal    ${headers}[Strict-Transport-Security]    max-age=31536000
+    ${directives}=    Evaluate    chr(10).join(line for line in $content.splitlines() if line.strip() and not line.strip().startswith('#'))
+    Should Not Contain    ${directives}    includeSubDomains    ignore_case=${True}
+    Should Not Contain    ${directives}    preload    ignore_case=${True}
 
 Published CSP allows the real backend and has no placeholder or eval
     [Documentation]    TC10-018. Checks the content of the published frontend/public/.htaccess. The header name is

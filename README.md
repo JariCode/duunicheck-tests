@@ -19,7 +19,7 @@ accounts and keys come from the gitignored `.env`. The TC number of every test i
 | 07_settings_api | Theme setting, validation and per-user separation |
 | 08_user_isolation_api | User B cannot read, change, delete or attach anything of user A |
 | 09_injection_security_api | NoSQL operators, prototype pollution, script strings, malformed and oversized JSON, CRLF |
-| 10_headers_cors_api | Security headers, CORS, preflight, error responses, headers and manifest MIME type in the published `frontend/public/.htaccess`, no sensitive files in a local frontend build, HSTS and CSP sources in the published `.htaccess`, `vite preview` sends the same headers and redirects the base path without a slash |
+| 10_headers_cors_api | Security headers, CORS, preflight, error responses, headers and manifest MIME type in the published `frontend/public/.htaccess`, no sensitive files in a local frontend build, backend CSP, Permissions-Policy and no-store on every response, public addresses are not redirected to Clerk while signed-in routes still need a token, HSTS and CSP sources in the published `.htaccess`, `vite preview` sends the same headers and redirects the base path without a slash |
 | 11_webhook_api | Clerk webhook signature checks and input validation |
 | 12_ui_applications | Add, edit, change status, delete applications in the browser |
 | 12b_account_deletion_api | The user.deleted webhook removes all data of that user and only that user's |
