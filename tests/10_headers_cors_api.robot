@@ -424,3 +424,34 @@ Vite preview sends the .htaccess headers and redirects the base path without a t
     Should Be Equal    ${with_query.header('Location')}    /robot-base/?view=jobs&x=1
     [Teardown]    Run Keywords    Terminate All Processes    kill=${True}
     ...    AND    Remove Directory    ${CURDIR}${/}..${/}tmp${/}preview-check    recursive=${True}
+
+Published .htaccess routes nested paths to index.html with mod_rewrite
+    [Documentation]    TC10-024. Checks the content of the published frontend/public/.htaccess (APP_DIR). The app is
+    ...    served from the domain root. Expected result: the directive lines (comments left out) contain
+    ...    "RewriteEngine On", "RewriteBase /", exactly two RewriteCond lines, \%{REQUEST_FILENAME} !-f and
+    ...    \%{REQUEST_FILENAME} !-d in this order, and "RewriteRule ^ index.html [L]", and no FallbackResource line.
+    [Tags]    frontend    htaccess    subdomain-release
+    ${content}=    Published Htaccess
+    ${directives}=    Evaluate    chr(10).join(line.strip() for line in $content.splitlines() if line.strip() and not line.strip().startswith('#'))
+    Should Match Regexp    ${directives}    (?m)^RewriteEngine\\s+On$    msg=The published .htaccess does not set RewriteEngine On
+    Should Match Regexp    ${directives}    (?m)^RewriteBase\\s+/$    msg=The published .htaccess does not set RewriteBase /
+    ${conditions}=    Get Regexp Matches    ${directives}    (?m)^RewriteCond\\b.*$
+    ${conditions}=    Evaluate    [' '.join(line.split()) for line in $conditions]
+    ${expected}=    Create List    RewriteCond \%{REQUEST_FILENAME} !-f    RewriteCond \%{REQUEST_FILENAME} !-d
+    Should Be Equal    ${conditions}    ${expected}
+    ...    msg=Unexpected RewriteCond lines: ${conditions}
+    Should Match Regexp    ${directives}    (?m)^RewriteRule\\s+\\^\\s+index\\.html\\s+\\[L\\]$    msg=The published .htaccess has no "RewriteRule ^ index.html [L]"
+    Should Not Match Regexp    ${directives}    (?im)^FallbackResource\\b    msg=The published .htaccess still has a FallbackResource line
+
+Published CSP allows the production Clerk domain and not the development domain
+    [Documentation]    TC10-025. Checks the content of the published frontend/public/.htaccess (APP_DIR). Expected
+    ...    result: script-src and connect-src of the CSP contain https://clerk.duunicheck.jaricode.fi (the Clerk
+    ...    Frontend API domain of production), and the CSP has no clerk.accounts.dev address (development keys).
+    [Tags]    frontend    htaccess    subdomain-release
+    ${csp}=    Published Csp
+    FOR    ${directive}    IN    script-src    connect-src
+        ${value}=    Csp Directive    ${csp}    ${directive}
+        Should Contain    ${{ $value.split() }}    https://clerk.duunicheck.jaricode.fi
+        ...    msg=${directive} does not allow https://clerk.duunicheck.jaricode.fi: ${value}
+    END
+    Should Not Contain    ${csp}    clerk.accounts.dev    msg=The CSP still allows the Clerk development domain: ${csp}

@@ -13,6 +13,17 @@ Prepare UI Suite
     Prepare Players    A
     Delete All Data    A
 
+Open Workspace Of User A
+    [Documentation]    Opens the workspace of user A in user A's session. Signs in again when the session has
+    ...    already signed out (after TC14-006), otherwise only resets the viewport and opens the overview.
+    Switch To Player    A
+    Set Viewport Size    1280    900
+    Go To    ${FRONTEND_URL}
+    Wait For Elements State    css=.workspace .topbar, .auth-cta >> nth=0    visible    timeout=45s
+    ${signed_out}=    Get Element Count    css=.auth-cta
+    IF    ${signed_out}    Sign In
+    Wait For Workspace
+
 
 *** Test Cases ***
 Every sidebar section opens without errors
@@ -103,3 +114,18 @@ Workspace cannot be reached without signing in
         Get Element Count    ${NAV}    ==    0
         Get Element Count    text=Yleiskatsaus    ==    0
     END
+
+Signing out loads the page fully
+    [Documentation]    TC14-009. Runs last, because it signs user A out; when TC14-006 has already signed the user
+    ...    out, the setup signs in again. A marker (window.__robotNoReload = true) is set in the workspace and the user
+    ...    signs out from the user menu. Expected result: the landing page opens and the marker is gone, so signing
+    ...    out outside the sign-in and sign-up dialogs is a full page load (routerPush/routerReplace keep the
+    ...    page only inside those dialogs).
+    [Tags]    subdomain-release
+    [Setup]    Open Workspace Of User A
+    Evaluate JavaScript    ${None}    () => { window.__robotNoReload = true }
+    Click    css=.cl-userButtonTrigger
+    Click    text=Kirjaudu ulos
+    Wait For Elements State    text=Avaa DuuniCheck >> nth=0    visible    timeout=30s
+    ${marker}=    Evaluate JavaScript    ${None}    () => window.__robotNoReload === undefined
+    Should Be True    ${marker}    msg=The page was not loaded again when signing out (the marker is still set)

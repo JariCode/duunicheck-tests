@@ -78,3 +78,10 @@ temp/
 run-tests.ps1
 # Manual test list (kept locally)
 MANUAL_TESTS.md
+
+# Claude Code files and local run scripts (not part of the test package)
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+run-tests.sh
+run-tests.ps1

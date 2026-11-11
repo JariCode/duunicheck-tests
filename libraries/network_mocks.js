@@ -102,8 +102,38 @@ async function addMissingSignUpField(urlPart, field, page, logger) {
   })
 }
 
+// Lets the real Clerk Frontend API answer every request whose URL contains urlPart, but adds the given field
+// to unverified_fields of every sign-up object in the answer that is still open (status missing_requirements).
+// An invitation ticket verifies the e-mail by itself, so this is how a test reaches the app's e-mail code step
+// of an invitation sign-up. Remove with Clear Mocked Responses.
+async function addUnverifiedSignUpField(urlPart, field, page, logger) {
+  const patch = (value) => {
+    if (Array.isArray(value)) return value.forEach(patch)
+    if (!value || typeof value !== 'object') return
+    if (String(value.object || '').startsWith('sign_up') && value.status === 'missing_requirements') {
+      if (!Array.isArray(value.unverified_fields)) value.unverified_fields = []
+      if (!value.unverified_fields.includes(field)) value.unverified_fields.push(field)
+    }
+    Object.values(value).forEach(patch)
+  }
+  await page.route((url) => url.href.includes(String(urlPart)), async (route) => {
+    const response = await route.fetch()
+    let body = await response.text()
+    try {
+      const json = JSON.parse(body)
+      patch(json)
+      body = JSON.stringify(json)
+      logger(`Added unverified sign-up field ${field} to ${route.request().method()} ${route.request().url()}`)
+    } catch (error) {
+      // Not JSON (e.g. a preflight): passed on unchanged.
+    }
+    await route.fulfill({ response, body })
+  })
+}
+
 exports.__esModule = true
 exports.addMissingSignUpField = addMissingSignUpField
+exports.addUnverifiedSignUpField = addUnverifiedSignUpField
 exports.startRecordingRequests = startRecordingRequests
 exports.getRecordedRequests = getRecordedRequests
 exports.stopRecordingRequests = stopRecordingRequests

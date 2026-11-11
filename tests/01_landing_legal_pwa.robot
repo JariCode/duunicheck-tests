@@ -2,6 +2,7 @@
 Documentation     Public part of the UI (no login): landing page, login dialog, legal modals,
 ...               small-screen layout, PWA files and privacy checks of the loaded resources.
 Resource          ../resources/common.robot
+Library           Process
 Suite Setup       Open Test Browser
 Suite Teardown    Close Browser    ALL
 Test Setup        Open New Session
@@ -60,6 +61,25 @@ Details View Should Not Be Empty
     ${fields}=    Get Element Count    css=.custom-signup form input
     ${alerts}=    Get Element Count    css=.custom-signup [role="alert"], .custom-signup-message
     Should Be True    ${fields} + ${alerts} > 0    msg=The "Täydennä tilin tiedot" view is empty
+
+Sign In On The Open Page
+    [Documentation]    Signs in as user A from the landing page that is already open, without Go To, so the page is
+    ...    not loaded again by the test itself (Sign In of common.robot opens the landing page first). The test
+    ...    code is entered if Clerk asks to verify a new device.
+    Click    text=Avaa DuuniCheck >> nth=0
+    Wait For Elements State    input[name="identifier"]    visible    timeout=15s
+    Fill Text    input[name="identifier"]    ${USER_A_EMAIL}
+    Click    .cl-formButtonPrimary
+    Fill Text    input[name="password"]    ${USER_A_PASSWORD}
+    Click    .cl-formButtonPrimary
+    ${submitted}=    Run Keyword And Return Status
+    ...    Wait For Elements State    input[name="password"]    hidden    timeout=10s
+    IF    not ${submitted}
+        Log    Password step was not submitted, submitting again
+        Click    .cl-formButtonPrimary
+    END
+    Enter Verification Code If Asked
+    Wait For Workspace
 
 
 *** Test Cases ***
@@ -304,20 +324,23 @@ Sign-in error texts contain no English words
     [Documentation]    TC01-039. Expected result: every sign-in error shown by Clerk is in Finnish: a malformed
     ...    e-mail address, an unknown e-mail, a wrong password and an empty password. None of them contains
     ...    English words such as "password", "incorrect", "invalid", "expired" or "account" (the sign-up form
-    ...    errors are checked in TC01-034..036).
+    ...    errors are checked in TC01-034..036). If the browser's own form check stops a malformed address
+    ...    first, only the stop is checked: that message comes from the browser and the operating system language
+    ...    (English in a Linux/WSL Chromium, Finnish on a Finnish Windows), not from the application. The form is
+    ...    then sent past the browser check so that Clerk's own error is still checked in Finnish.
     [Tags]    finnish-errors
     Open Sign In
     FOR    ${identifier}    IN    robot-ei-osoite@    robot-unknown-${{ int(__import__('time').time()) }}+clerk_test@example.com
         Fill Text    input[name="identifier"]    ${identifier}
         Click    .cl-formButtonPrimary
-        # A malformed address can already be stopped by the browser's own check; its message counts too.
         ${browser_message}=    Get Property    input[name="identifier"]    validationMessage
         IF    $browser_message
-            Text Should Be Finnish    ${browser_message}    The browser's message for "${identifier}"
-        ELSE
-            ${error}=    Clerk Form Error
-            Text Should Be Finnish    ${error}    The error for "${identifier}"
+            Log    The browser stopped "${identifier}" with its own message: ${browser_message}
+            Evaluate JavaScript    input[name="identifier"]    (input) => { input.form.noValidate = true }
+            Click    .cl-formButtonPrimary
         END
+        ${error}=    Clerk Form Error
+        Text Should Be Finnish    ${error}    The error for "${identifier}"
     END
     Fill Text    input[name="identifier"]    ${USER_A_EMAIL}
     Click    .cl-formButtonPrimary
@@ -689,3 +712,76 @@ Legal texts and the landing page name no job site
         Keyboard Key    press    Escape
         Wait For Elements State    css=#legal-modal-title    detached
     END
+
+Landing page fills a tall screen with the footer at the bottom and no scrolling
+    [Documentation]    TC01-041. Expected result: on a 1920 × 1300 window the landing page is centred vertically:
+    ...    the bottom edge of .auth-footer is at the bottom edge of the window (±2 px), and the page scrolls
+    ...    neither vertically nor horizontally.
+    [Tags]    subdomain-release
+    Set Viewport Size    1920    1300
+    Open Landing Page
+    ${layout}=    Evaluate JavaScript    css=.auth-footer
+    ...    (footer) => ({ bottom: footer.getBoundingClientRect().bottom, height: window.innerHeight, vertical: document.documentElement.scrollHeight - document.documentElement.clientHeight, horizontal: document.documentElement.scrollWidth - document.documentElement.clientWidth })
+    Should Be True    abs(${layout}[bottom] - ${layout}[height]) <= 2
+    ...    msg=The footer ends at ${layout}[bottom] px, the window at ${layout}[height] px
+    Should Be True    ${layout}[vertical] <= 1    msg=The landing page scrolls vertically by ${layout}[vertical] px
+    Should Be True    ${layout}[horizontal] <= 1    msg=The landing page scrolls horizontally by ${layout}[horizontal] px
+
+Signing in does not reload the page
+    [Documentation]    TC01-042. A marker (window.__robotNoReload = true) is set on the open landing page, and user A
+    ...    signs in from it (with the test code if Clerk asks to verify the device). Expected result: the workspace
+    ...    opens and the marker is still true, so no step of Clerk's sign-in (sign-in address, password step, code
+    ...    step, return to the app) loaded the page again; Clerk moved between the steps with routerPush and
+    ...    routerReplace.
+    [Tags]    subdomain-release
+    Open Landing Page
+    Evaluate JavaScript    ${None}    () => { window.__robotNoReload = true }
+    Sign In On The Open Page
+    ${marker}=    Evaluate JavaScript    ${None}    () => window.__robotNoReload === true
+    Should Be True    ${marker}    msg=The page was loaded again during the sign-in (the marker is gone)
+
+Finnish Clerk errors cover too many requests, a locked account and a missing resource
+    [Documentation]    TC01-043. Runs node in APP_DIR/frontend and imports src/clerk/finnishClerkErrors.js (no
+    ...    browser). Expected result: finnishUnstableErrors has a Finnish text for too_many_requests, user_locked and
+    ...    resource_not_found, and none of the three contains the English words "too many", "locked", "account" or
+    ...    "please" (nor the other English error words of Text Should Be Finnish).
+    [Tags]    subdomain-release    finnish-errors
+    [Setup]    NONE
+    Require Config    APP_DIR
+    ${frontend}=    Normalize Path    ${APP_DIR}${/}frontend
+    ${script}=    Set Variable    import('./src/clerk/finnishClerkErrors.js').then(function (m) { console.log(JSON.stringify(m.finnishUnstableErrors)) })
+    ${result}=    Run Process    node    -e    ${script}    cwd=${frontend}    timeout=60s
+    Should Be Equal As Integers    ${result.rc}    0    msg=node could not import finnishClerkErrors.js: ${result.stderr}[-1500:]
+    ${errors}=    Evaluate    json.loads($result.stdout)    modules=json
+    FOR    ${code}    IN    too_many_requests    user_locked    resource_not_found
+        Dictionary Should Contain Key    ${errors}    ${code}    msg=finnishUnstableErrors has no text for ${code}
+        ${text}=    Set Variable    ${errors}[${code}]
+        Should Be True    isinstance($text, str) and $text.strip()    msg=The text of ${code} is empty: ${text}
+        FOR    ${english}    IN    too many    locked    account    please
+            Should Not Contain    ${text}    ${english}    ignore_case=${True}    msg=The text of ${code} contains "${english}": ${text}
+        END
+        Text Should Be Finnish    ${text}    The text of ${code}
+    END
+    [Teardown]    NONE
+
+Code step of the invitation sign-up says that a new code replaces the earlier one
+    [Documentation]    TC01-044. An invitation ticket verifies the e-mail by itself, so the code step is reached by
+    ...    starting the ticket sign-up without a password (as in TC01-032) and marking the e-mail unverified in
+    ...    every answer of Clerk's Frontend API (Add Unverified Sign Up Field) before the continue address
+    ...    (sign-up/continue) is opened. Expected result: the code step "Vahvista sähköpostiosoitteesi" shows the
+    ...    hint "Uusi koodi korvaa aiemman. Käytä aina viimeisintä sähköpostiin saapunutta koodia." No account
+    ...    is created.
+    [Tags]    subdomain-release    invitation
+    ${invitation}=    Invite Throw-away User    codehint
+    Open Invitation Link    ${invitation}
+    ${missing}=    Start Ticket Sign-up Without Password
+    Should Contain    ${missing}    password
+    Add Unverified Sign Up Field    clerk.accounts.dev/v1/client    email_address
+    Go To    ${FRONTEND_URL}sign-up/continue
+    Wait For Elements State    css=.custom-signup h2:text-is("Vahvista sähköpostiosoitteesi")    visible    timeout=20s
+    Wait For Elements State
+    ...    css=.custom-signup form small.custom-signup-hint:text-is("Uusi koodi korvaa aiemman. Käytä aina viimeisintä sähköpostiin saapunutta koodia.")
+    ...    visible
+    ${users}=    Clerk User Ids With Email    ${invitation}[email]
+    Should Be Empty    ${users}
+    [Teardown]    Run Keywords    Run Keyword And Ignore Error    Clear Mocked Responses    AND    Close Invitation Session
