@@ -30,6 +30,7 @@ accounts and keys come from the gitignored `.env`. The TC number of every test i
 | 17_ui_materials_profile | CV editing with list chips and photo, template editing, deleting, file download and drop zone, AI chat context options, Clerk profile dialog and legal links in the user menu |
 | 18_import_delete_api | File import (`import-applications`, `remap`): sign-in, extension and content checks, macros, size, empty files, zip bombs, encrypted files, character set, PDF scripts, Excel/CSV/Word/PDF/TXT reading and conversion, duplicates, 50 row and 500 application limits, hidden instructions; `bulk-delete` and `find-applications`: sign-in, validation, own data only, no widening by regex characters |
 | 19_ui_import_delete | AI chat tool options and their locking, file import list and saving, undo import, delete search and confirmation, chat state across tabs, reload and sign-out, beforeunload warning, scrolling of long lists, privacy note, small screens (OpenAI answers mocked) |
+| 23_ui_print_pdf | Printing per device (tag `pdf-print`): the iOS home screen app shares the PDF made on the device (file name, type, size, canShare false, cancelled and failed share), Safari and the Dock app on a Mac open the PDF in a new tab or download it when the tab is blocked, other browsers keep calling window.print(); dashboard metric cards have equal font sizes on phones and do not stay tilted after a tap |
 | 99_rate_limits_api | API, upload and AI rate limits; the posting parser, the file import and the delete search share the AI limit, file imports count as uploads, bulk delete counts towards the API limit (needs the backend's ORIGINAL limits) |
 
 ## Folder structure
@@ -106,7 +107,7 @@ python -m robot tests/02_authentication_api.robot
 ```
 
 Tags: `api`, `browser`, `security`, `rate-limit`, `slow`, `known-gap`, `openai`, `no-openai-key`, `htaccess`, `build`, `import`,
-`invitation`, `finnish-errors`, `dialogs`, `unit`.
+`invitation`, `finnish-errors`, `dialogs`, `unit`, `pdf-print`.
 
 Suite 22 runs the backend's own unit tests (`node --test` in `APP_DIR/backend`) as one Robot test.
 
@@ -136,7 +137,9 @@ Network mocks: the Browser library has no request interception keyword, so `libr
 (loaded with `jsextension` in common.robot) adds `Mock Json Response`, `Get Mocked Request Bodies` and
 `Clear Mocked Responses`, plus `Start Recording Requests`, `Get Recorded Requests` and `Stop Recording Requests`,
 which record real requests without changing them. Suites 13 and 19 use them to test the posting draft, import and
-delete paths without OpenAI.
+delete paths without OpenAI. `Emulate Print Device` adds an init script (Playwright `addInitScript`) to the active
+context: the app's JavaScript sees an iPhone home screen app or Mac Safari, and window.print, window.open,
+navigator.share and navigator.canShare record their calls. Suite 23 uses it through `resources/print_pdf.robot`.
 
 ## Expected findings (`known-gap`)
 
