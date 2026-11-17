@@ -551,3 +551,30 @@ Signing out clears the chat
     FOR    ${toggle}    IN    ${POSTING_TOGGLE}    ${IMPORT_TOGGLE}    ${DELETE_TOGGLE}
         Get Checkbox State    ${toggle}    ==    unchecked
     END
+
+Import preview does not offer the old event type Hakemus jätetty
+    [Documentation]    TC19-016. The import answer is mocked (one row with the status Lähetetty, which becomes a
+    ...    "Lähetetty" event). Expected result: in the opened row the event menu offers exactly Lähetetty,
+    ...    Vastaus saatu, Haastattelu sovittu, Haastattelu pidetty, Tarjous, Hyväksytty, Hylätty and Muu tapahtuma,
+    ...    with Lähetetty selected; an event added with "＋ Lisää tapahtuma" gets the same menu with Muu tapahtuma
+    ...    selected. "Hakemus jätetty" is in neither.
+    [Tags]    events
+    [Teardown]    Finish Mocked Test
+    Mock Import Answer    1    ROBOT Tyyppi
+    Open Assistant
+    Import Mocked File
+    ${row}=    Set Variable    ${IMPORT_MESSAGE} >> css=.import-row >> nth=0
+    Click    ${row} >> css=.import-row-toggle
+    ${offered}=    Create List    Lähetetty    Vastaus saatu    Haastattelu sovittu    Haastattelu pidetty    Tarjous
+    ...    Hyväksytty    Hylätty    Muu tapahtuma
+    Get Element Count    ${row} >> css=.import-event select    ==    1
+    ${options}=    Get Select Options    ${row} >> css=.import-event select >> nth=0
+    ${labels}=    Evaluate    [option['label'] for option in $options]
+    Should Be Equal    ${labels}    ${offered}
+    Get Selected Options    ${row} >> css=.import-event select >> nth=0    label    ==    Lähetetty
+    Click    ${row} >> css=button.import-link:has-text("Lisää tapahtuma")
+    Get Element Count    ${row} >> css=.import-event select    ==    2
+    ${options}=    Get Select Options    ${row} >> css=.import-event select >> nth=1
+    ${labels}=    Evaluate    [option['label'] for option in $options]
+    Should Be Equal    ${labels}    ${offered}
+    Get Selected Options    ${row} >> css=.import-event select >> nth=1    label    ==    Muu tapahtuma

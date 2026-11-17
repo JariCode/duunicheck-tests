@@ -785,3 +785,35 @@ Code step of the invitation sign-up says that a new code replaces the earlier on
     ${users}=    Clerk User Ids With Email    ${invitation}[email]
     Should Be Empty    ${users}
     [Teardown]    Run Keywords    Run Keyword And Ignore Error    Clear Mocked Responses    AND    Close Invitation Session
+
+Privacy policy section 5 lists the CV fields and the conversation history sent to OpenAI
+    [Documentation]    TC01-045. Expected result: the first paragraph under "5. Tekoälyavustaja" of the privacy
+    ...    policy says that from an app CV only the job title, profile, skills, work experience, education,
+    ...    certificates, courses and languages are sent, never the name, contact details, links, hobbies or
+    ...    photo; that the latest messages (at most 6) of the conversation with the AI assistant about the same
+    ...    application are sent too, so it can continue an unfinished reply; that the app's own answers built
+    ...    from the application data are not sent; and that contact details are removed from earlier assistant
+    ...    replies. The old list "otsikko, yhteenveto, taidot, kokemus ja koulutus" is gone. The privacy policy
+    ...    reads "Päivitetty viimeksi: 17. marraskuuta 2026" and the terms of use still "Päivitetty viimeksi:
+    ...    9. marraskuuta 2026": the two are dated separately.
+    [Tags]    privacy    privacy-policy
+    Open Landing Page
+    Click    css=footer >> text=Tietosuojaseloste
+    Wait For Elements State    css=#legal-modal-title    visible
+    ${section}=    Get Text    ${DIALOG} >> css=h2:text-is("5. Tekoälyavustaja") + p
+    ${section}=    Evaluate    ' '.join($section.replace(chr(0xa0), ' ').split())
+    Should Contain    ${section}    Sovelluksessa luodusta CV:stä lähetetään vain ammattinimike, profiili, taidot, työkokemus, koulutus, sertifikaatit, kurssit ja kielitaito.
+    Should Contain    ${section}    Nimeä, yhteystietoja, linkkejä, harrastuksia eikä CV-kuvaa lähetetä.
+    Should Contain    ${section}    Lisäksi lähetetään saman hakemuksen AI-työparin kanssa käydyn keskustelun viimeisimmät viestit (enintään 6), jotta avustaja voi jatkaa keskustelua, esimerkiksi kesken jääneen vastauksen.
+    Should Contain    ${section}    Sovelluksen omia hakemustietovastauksia ei lähetetä.
+    Should Contain    ${section}    Avustajan aiemmista vastauksista poistetaan yhteystiedot kuten muustakin tekstistä.
+    ${all}=    Get Text    ${DIALOG}
+    Should Not Contain    ${all}    otsikko, yhteenveto, taidot, kokemus ja koulutus
+    Get Text    ${DIALOG} >> css=.legal-updated    ==    Päivitetty viimeksi: 17. marraskuuta 2026
+    Keyboard Key    press    Escape
+    Wait For Elements State    css=#legal-modal-title    detached
+    Click    css=footer >> text=Käyttöehdot
+    Wait For Elements State    css=#legal-modal-title    visible
+    Get Text    ${DIALOG} >> css=.legal-updated    ==    Päivitetty viimeksi: 9. marraskuuta 2026
+    Keyboard Key    press    Escape
+    Wait For Elements State    css=#legal-modal-title    detached

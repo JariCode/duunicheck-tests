@@ -79,7 +79,10 @@ History and notes are only included when asked for
     Should Contain    ${history.json}[answer]    Tapahtumahistoria
 
 Conversation history keeps questions and answers in order
-    [Documentation]    TC06-003. Expected result: Conversation history keeps questions and answers in order.
+    [Documentation]    TC06-003. Expected result: Conversation history keeps questions and answers in order, and
+    ...    every message of a local answer is marked with source "local" (the chat offers "Lähetä AI:lle"
+    ...    for those, and they are never sent to OpenAI as history).
+    [Tags]    local-question
     ${app}=    Create Application As    A
     ${empty}=    Api Request    GET    /api/conversations/${app}[id]    user=A
     Status Should Be    ${empty}    200
@@ -91,6 +94,8 @@ Conversation history keeps questions and answers in order
     Should Be Equal    ${roles}    ${{ ['user', 'assistant', 'user', 'assistant'] }}
     Should Be Equal    ${history.json}[messages][0][content]    Ensimmäinen kysymys tila
     Should Be Equal    ${history.json}[messages][2][content]    Toinen kysymys tila
+    ${sources}=    Evaluate    [m.get('source') for m in $history.json['messages']]
+    Should Be Equal    ${sources}    ${{ ['local'] * 4 }}
     Response Should Not Contain Internal Fields    ${history}
 
 Question validation

@@ -467,6 +467,62 @@ Deleting an attached CV or template clears it and the application can still be s
         Status Should Be    ${stale}    400
     END
 
+Template of an application can be changed with PATCH without touching anything else
+    [Documentation]    TC03-033. PATCH /api/applications/:id/template { templateId } is used when an AI cover
+    ...    letter is saved as a new template. Expected result: with user A's own new template it answers 200 and
+    ...    the application then has that templateId while its application text, notes, events, CV and the old
+    ...    template stay exactly as they were. A malformed application id, a body with another field or a
+    ...    malformed templateId answer 400, user B's template answers 400 (not found on this account), user B
+    ...    cannot change user A's application (404), a missing application answers 404, and an application with
+    ...    an attached cover letter file answers 409 and keeps its file and no template.
+    [Tags]    ai-letter
+    ${old}=    Create Template As    A    name=ROBOT Vanha pohja    body=Vanha kirje.
+    ${new}=    Create Template As    A    name=ROBOT Uusi pohja    body=Uusi kirje.
+    ${cv}=    Create Cv As    A
+    &{event}=    Create Dictionary    id=1    type=Lähetetty    date=2026-11-02    note=Lähetetty
+    ${app}=    Create Application As    A    templateId=${old}[id]    cvId=${cv}[id]
+    ...    applicationText=Oma hakemusteksti.    notes=Oma muistiinpano    events=${{ [$event] }}
+    ${before}=    Stored Application    ${app}[id]
+    ${response}=    Api Request    PATCH    /api/applications/${app}[id]/template    user=A    json_body=${{ {'templateId': $new['id']} }}
+    Status Should Be    ${response}    200
+    Should Be Equal    ${response.json}[templateId]    ${new}[id]
+    Response Should Not Contain Internal Fields    ${response}
+    ${after}=    Stored Application    ${app}[id]
+    ${expected}=    Evaluate    {**$before, 'templateId': $new['id']}
+    ${compared}=    Evaluate    {k: v for k, v in $after.items() if k != 'updatedAt'}
+    ${expected}=    Evaluate    {k: v for k, v in $expected.items() if k != 'updatedAt'}
+    Should Be Equal    ${compared}    ${expected}
+    ${templates}=    Api Request    GET    /api/templates    user=A
+    ${kept}=    Evaluate    [t for t in $templates.json if t['id'] == $old['id']][0]
+    Should Be Equal    ${kept}[body]    Vanha kirje.
+    Should Be Equal    ${kept}[name]    ROBOT Vanha pohja
+    FOR    ${path}    ${body}    IN
+    ...    /api/applications/not-an-id/template    ${{ {'templateId': $new['id']} }}
+    ...    /api/applications/${app}[id]/template    ${{ {'templateId': 'not-an-id'} }}
+    ...    /api/applications/${app}[id]/template    ${{ {'templateId': $new['id'], 'notes': 'x'} }}
+    ...    /api/applications/${app}[id]/template    ${{ {} }}
+        ${bad}=    Api Request    PATCH    ${path}    user=A    json_body=${body}
+        Status Should Be    ${bad}    400
+        Error Response Should Be Safe    ${bad}
+    END
+    ${foreign}=    Create Template As    B    name=ROBOT B:n pohja
+    ${other}=    Api Request    PATCH    /api/applications/${app}[id]/template    user=A    json_body=${{ {'templateId': $foreign['id']} }}
+    Status Should Be    ${other}    400
+    ${not_own}=    Api Request    PATCH    /api/applications/${app}[id]/template    user=B    json_body=${{ {'templateId': $foreign['id']} }}
+    Status Should Be    ${not_own}    404
+    ${missing}=    Api Request    PATCH    /api/applications/${MISSING_ID}/template    user=A    json_body=${{ {'templateId': $new['id']} }}
+    Status Should Be    ${missing}    404
+    ${still}=    Stored Application    ${app}[id]
+    Should Be Equal    ${still}[templateId]    ${new}[id]
+    ${letter}=    Upload Text File As    A    application    robot-patch-kirje.txt    Liitetty hakukirje
+    ${with_file}=    Create Application As    A    applicationFileIds=${{ [$letter['id']] }}
+    ${conflict}=    Api Request    PATCH    /api/applications/${with_file}[id]/template    user=A    json_body=${{ {'templateId': $new['id']} }}
+    Status Should Be    ${conflict}    409
+    Should Be Equal    ${conflict.json}[error]    Hakemukseen on liitetty hakukirjetiedosto, joten hakemuspohjaa ei voi valita sen rinnalle.
+    ${kept_file}=    Stored Application    ${with_file}[id]
+    Should Be Equal    ${kept_file}[applicationFileIds]    ${{ [$letter['id']] }}
+    Should Be Equal    ${kept_file}[templateId]    ${EMPTY}
+
 
 *** Keywords ***
 Stored Application

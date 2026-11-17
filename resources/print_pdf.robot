@@ -5,6 +5,7 @@ Documentation     Keywords of the print tests (suite 23). The app chooses how a 
 ...               every other browser calls window.print(). Emulate Print Device (libraries/network_mocks.js)
 ...               makes the app see the device and records the print, open and share calls.
 Resource          common.robot
+Library           ../libraries/PdfText.py
 
 
 *** Variables ***
@@ -19,6 +20,14 @@ ${PDF_READY_TITLE}        PDF on valmis
 ${SAFARI_HELP}            Avaa duunicheck.jaricode.fi Safarissa, niin voit tulostaa tai tallentaa PDF:n sieltä.
 # A real PDF of the app embeds the DM Sans fonts, so it is far bigger than this.
 ${MIN_PDF_BYTES}          ${10240}
+# Height of an A4 page; the CV print sheet is one page tall (PrintSheet.css .print-document.print-cv).
+${A4_HEIGHT_MM}           ${297}
+# Reads a Blob or File as base64 in the page (the argument is a blob URL or null for the shared file).
+${READ_PDF_JS}            SEPARATOR=
+...    async (url) => { const blob = url ? await (await fetch(url)).blob() : window.__lastSharedFile;
+...    if (!blob) return ''; const bytes = new Uint8Array(await blob.arrayBuffer()); let s = '';
+...    for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode(...bytes.subarray(i, i + 32768));
+...    return btoa(s) }
 
 
 *** Keywords ***
@@ -69,7 +78,7 @@ Prepare Print Data
     [Arguments]    ${cv_name}    ${full_name}    ${template_name}    ${company}
     ${photo}=    Png Data Uri    64    80
     ${cv}=    Create Cv As    A    name=${cv_name}    fullName=${full_name}    title=Testiammattilainen
-    ...    photo=${photo}
+    ...    photo=${photo}    email=vaino.testinen@example.com    phone=+358 00 000 0000
     ...    summary=Ohjelmistotestaaja, joka kirjoittaa automaattisia testejä ja etsii virheet ennen käyttäjiä. Työskentelen mielelläni kehittäjien kanssa ja selitän löydökset selkeästi.
     ...    skills=Robot Framework\nPlaywright\nPython\nJavaScript\nREST-rajapinnat\nGit
     ...    languages=Suomi, äidinkieli\nEnglanti, sujuva\nRuotsi, tyydyttävä
@@ -83,6 +92,7 @@ Prepare Print Data
     ...    body=Hei,\n\nHaen tehtävää {{tehtävä}} yrityksessä {{yritys}}. Olen työskennellyt testaajana neljä vuotta ja rakentanut testiautomaatiota verkkosovelluksille.\n\n# Miksi juuri minä\nKirjoitan testejä, jotka löytävät virheet ajoissa, ja raportoin ne niin, että kehittäjät voivat korjata ne nopeasti.\n\nKerron mielelläni lisää haastattelussa.\n\nYstävällisin terveisin,\n${full_name}
     Create Application As    A    company=${company}    role=Testaaja    place=Esimerkkilä    cvId=${cv}[id]
     ...    templateId=${template}[id]
+    Set Suite Variable    ${PRINT_CV}    ${cv}
     Reload
     Wait For Workspace
 
@@ -99,6 +109,20 @@ Print Application From Details
     Click    css=.job-row:has-text("${company}") >> button:text-is("Tiedot")
     Wait For Elements State    css=.detail-card    visible
     Click    css=.detail-print-actions >> button:text-is("Tulosta hakemus / PDF")
+
+Print Letter From Details
+    [Documentation]    Opens the details of the application and presses "Tulosta hakukirje: <template>".
+    [Arguments]    ${company}    ${template_name}
+    Go To Section    Hakemukset
+    Click    css=.job-row:has-text("${company}") >> button:text-is("Tiedot")
+    Wait For Elements State    css=.detail-card    visible
+    Click    css=.detail-document:has-text("Tulosta hakukirje: ${template_name}")
+
+Print Template From Materials
+    [Documentation]    Presses "Tulosta / tallenna PDF" of the template card in CV & pohjat.
+    [Arguments]    ${template_name}
+    Go To Section    CV & pohjat
+    Click    css=.template-card:has-text("${template_name}") >> button:text-is("Tulosta / tallenna PDF")
 
 Pdf Dialog Should Become Ready
     [Documentation]    The PDF dialog opens, first shows that the PDF is being made (unless it was already
@@ -147,6 +171,123 @@ Blob Should Be A Pdf
     Should Be Equal    ${blob}[type]    application/pdf
     Should Be Equal    ${blob}[head]    %PDF-
     Should Be True    ${blob}[size] > ${MIN_PDF_BYTES}    msg=The opened PDF has only ${blob}[size] bytes
+
+Opened Pdf Pages
+    [Documentation]    The text of every page of the PDF behind the blob URL the app opened (Mac Safari).
+    [Arguments]    ${url}
+    ${data}=    Evaluate JavaScript    ${None}    ${READ_PDF_JS}    arg=${url}
+    Should Not Be Empty    ${data}    msg=The opened PDF could not be read
+    ${pages}=    Pdf Page Texts    ${data}
+    RETURN    ${pages}
+
+Shared Pdf Pages
+    [Documentation]    The text of every page of the PDF file last handed to navigator.share (iPhone).
+    ${data}=    Evaluate JavaScript    ${None}    ${READ_PDF_JS}    arg=${None}
+    Should Not Be Empty    ${data}    msg=No shared PDF file was recorded
+    ${pages}=    Pdf Page Texts    ${data}
+    RETURN    ${pages}
+
+Finnish Long Date
+    [Documentation]    Today as the app writes it in a letter (fi-FI, day numeric, month long), e.g.
+    ...    "17. marraskuuta 2026". Built here from the month names, independently of the app.
+    ${date}=    Evaluate
+    ...    (lambda d: f"{d.day}. {['tammikuuta', 'helmikuuta', 'maaliskuuta', 'huhtikuuta', 'toukokuuta', 'kesäkuuta', 'heinäkuuta', 'elokuuta', 'syyskuuta', 'lokakuuta', 'marraskuuta', 'joulukuuta'][d.month - 1]} {d.year}")(datetime.date.today())
+    ...    modules=datetime
+    RETURN    ${date}
+
+Cv Pdf Should Have The New Layout
+    [Documentation]    The CV PDF has the given number of pages. The first page starts with the name, the
+    ...    title, the contact line "email · phone" and then the full-width section "Profiili" with the
+    ...    summary, before the columns (IT-taidot). There is no contact box: no "Yhteystiedot",
+    ...    "Sähköposti" or "Puhelin" label anywhere, and the summary is printed only once.
+    [Arguments]    ${pages}    ${cv}    ${page_count}
+    Length Should Be    ${pages}    ${page_count}    msg=The CV PDF has ${{ len($pages) }} pages, expected ${page_count}
+    Pdf Text Should Contain In Order    ${pages}[0]    ${cv}[fullName]    ${cv}[title]
+    ...    ${cv}[email] · ${cv}[phone]    Profiili    ${cv}[summary]    IT-taidot
+    ${all}=    Evaluate    ' '.join($pages)
+    Pdf Text Should Not Contain    ${all}    Yhteystiedot    Sähköposti    Puhelin
+    ${count}=    Pdf Text Count    ${all}    ${cv}[summary]
+    Should Be Equal As Integers    ${count}    1    msg=The summary is printed ${count} times
+
+Letter Pdf Should Have The Date In The Header
+    [Documentation]    The cover letter PDF (HAKUKIRJE layout) has the title bar, the name, the contact lines
+    ...    and today's date in the header, before the letter. There is no recipient box: no "Vastaanottaja"
+    ...    or "Päiväys" label. ${before} are the texts expected between the name and the date, ${after}
+    ...    the texts expected after the date.
+    [Arguments]    ${pages}    ${name}    ${before}    ${after}
+    ${date}=    Finnish Long Date
+    Pdf Text Should Contain In Order    ${pages}[0]    HAKUKIRJE    ${name}    @{before}    ${date}    @{after}
+    ${all}=    Evaluate    ' '.join($pages)
+    Pdf Text Should Not Contain    ${all}    Vastaanottaja    Päiväys
+    ${count}=    Pdf Text Count    ${all}    ${date}
+    Should Be Equal As Integers    ${count}    1    msg=The date is printed ${count} times
+
+Print Sheet Layout
+    [Documentation]    Lays the page out for print (Emulate Media) and measures the CV print sheet: the gap
+    ...    scale the app set (--cv-gap of the style attribute), where the columns end below the top of the
+    ...    sheet (mm), the bottom margin of the profile section (mm, 4mm * gap in PrintSheet.css) and the
+    ...    font sizes of the name and the body text. The screen layout is restored afterwards.
+    Emulate Media    media=print
+    ${layout}=    Evaluate JavaScript    ${None}
+    ...    () => { const sheet = document.querySelector('.print-document.print-cv'); const mm = (px) => px * 25.4 / 96; const top = sheet.getBoundingClientRect().top; const profile = sheet.querySelector('.cv-print-profile'); return { gap: sheet.style.getPropertyValue('--cv-gap'), end: mm(sheet.querySelector('.cv-print-columns').getBoundingClientRect().bottom - top), profileMargin: profile ? mm(parseFloat(getComputedStyle(profile).marginBottom)) : null, nameSize: getComputedStyle(sheet.querySelector('h1')).fontSize, textSize: getComputedStyle(sheet).fontSize } }
+    Emulate Media    media=screen
+    RETURN    ${layout}
+
+Cv Print Sheet Should Have The New Layout
+    [Documentation]    The CV print sheet in the DOM: the header (.cv-print-hero) has the name, the title,
+    ...    the contact line "email · phone" (.cv-print-contact) and the photo, but not the summary; the
+    ...    section "Profiili" (.cv-print-profile) with the summary comes right after the header; there is no
+    ...    contact box (no "Yhteystiedot" heading, no .cv-print-summary).
+    [Arguments]    ${cv}
+    ${sheet}=    Set Variable    css=.print-document.print-cv
+    Get Text    ${sheet} >> css=.cv-print-hero h1    ==    ${cv}[fullName]
+    Get Text    ${sheet} >> css=.cv-print-hero .cv-print-title    ==    ${cv}[title]
+    Get Text    ${sheet} >> css=.cv-print-hero .cv-print-contact    ==    ${cv}[email] · ${cv}[phone]
+    Get Element Count    ${sheet} >> css=.cv-print-hero img.cv-print-photo    ==    1
+    Get Text    ${sheet} >> css=.cv-print-hero    not contains    ${cv}[summary]
+    Get Element Count    ${sheet} >> css=.cv-print-hero + section.cv-print-profile    ==    1
+    Get Text    ${sheet} >> css=.cv-print-profile h2    ==    Profiili
+    Get Text    ${sheet} >> css=.cv-print-profile p    ==    ${cv}[summary]
+    Get Element Count    ${sheet} >> css=.cv-print-summary    ==    0
+    Get Element Count    ${sheet} >> css=h2:text-is("Yhteystiedot")    ==    0
+    Get Element Count    ${sheet} >> css=section.cv-print-contact    ==    0
+
+Letter Print Sheet Should Have The Date In The Header
+    [Documentation]    The HAKUKIRJE print sheet in the DOM: no recipient box (.letter-address-row,
+    ...    .letter-recipient, the labels Vastaanottaja and Päiväys), and the last item of the header's contact
+    ...    list (.letter-sender li.letter-date) holds today's date as a time element after the given contact
+    ...    lines. ${missing} are texts that only the recipient box had.
+    [Arguments]    ${contacts}    @{missing}
+    ${sheet}=    Set Variable    css=.print-document.print-application
+    Get Element Count    ${sheet} >> css=.letter-address-row    ==    0
+    Get Element Count    ${sheet} >> css=.letter-recipient    ==    0
+    ${text}=    Get Text    ${sheet}
+    ${lower}=    Convert To Lower Case    ${text}
+    Should Not Contain    ${lower}    vastaanottaja
+    Should Not Contain    ${lower}    päiväys
+    FOR    ${value}    IN    @{missing}
+        Should Not Contain    ${text}    ${value}
+    END
+    ${date}=    Finnish Long Date
+    Get Text    ${sheet} >> css=.letter-sender li.letter-date time    ==    ${date}
+    Get Element Count    ${sheet} >> css=.letter-sender ul > li:last-child.letter-date    ==    1
+    ${items}=    Get Elements    ${sheet} >> css=.letter-sender ul > li
+    ${texts}=    Create List
+    FOR    ${item}    IN    @{items}
+        ${value}=    Get Text    ${item}
+        Append To List    ${texts}    ${value}
+    END
+    ${expected}=    Evaluate    list($contacts) + [$date]
+    Should Be Equal    ${texts}    ${expected}
+
+App Cv Gap Scale
+    [Documentation]    The gap scale the app's printPdf.js (cvGapScale, used by both the print and the PDF)
+    ...    gives the CV. The module is imported from the address the app itself loaded it from.
+    [Arguments]    ${cv}
+    ${scale}=    Evaluate JavaScript    ${None}
+    ...    async (cv) => { const entry = performance.getEntriesByType('resource').map((e) => e.name).find((name) => name.includes('/utils/printPdf.js')); if (!entry) return 'printPdf.js was not loaded'; return (await import(entry)).cvGapScale(cv) }
+    ...    arg=${cv}
+    RETURN    ${scale}
 
 Metric Font Sizes
     [Documentation]    Returns the computed font sizes of the label row (div), the number (b) and the note

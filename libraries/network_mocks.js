@@ -17,7 +17,7 @@ async function mockJsonResponse(urlGlob, status, body, page, logger) {
       'access-control-allow-origin': origin,
       'access-control-allow-credentials': 'true',
       'access-control-allow-headers': 'authorization, content-type',
-      'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
       vary: 'Origin',
     }
     if (request.method() === 'OPTIONS') {
@@ -39,6 +39,16 @@ async function getMockedRequestBodies() {
 async function clearMockedResponses(page) {
   mockedBodies.length = 0
   await page.unrouteAll({ behavior: 'ignoreErrors' })
+}
+
+// Makes every request of the active page that matches urlGlob fail at the network level, as when the
+// connection is down: no response arrives and fetch rejects ("Failed to fetch" in Chromium). Preflights
+// fail too. Remove with Clear Mocked Responses.
+async function abortRequests(urlGlob, page, logger) {
+  await page.route(urlGlob, async (route) => {
+    logger(`Aborted ${route.request().method()} ${route.request().url()}`)
+    await route.abort('internetdisconnected')
+  })
 }
 
 // Requests seen by the recorder (method, url, body), oldest first. Unlike the mocks above, recorded requests
@@ -196,6 +206,9 @@ function printCaptureInit(device) {
   })
   method(navigator, 'share', (data) => {
     capture.shares.push(fileOf(data))
+    // The File itself, so a test can read the shared PDF (it is kept out of __printCapture, which is
+    // returned to Robot as JSON).
+    window.__lastSharedFile = (data && data.files && data.files[0]) || null
     if (capture.shareResult === 'abort') return Promise.reject(new DOMException('Share canceled', 'AbortError'))
     if (capture.shareResult === 'error') return Promise.reject(new DOMException('Share failed', 'NotAllowedError'))
     return Promise.resolve()
@@ -240,5 +253,6 @@ exports.startRecordingRequests = startRecordingRequests
 exports.getRecordedRequests = getRecordedRequests
 exports.stopRecordingRequests = stopRecordingRequests
 exports.mockJsonResponse = mockJsonResponse
+exports.abortRequests = abortRequests
 exports.getMockedRequestBodies = getMockedRequestBodies
 exports.clearMockedResponses = clearMockedResponses

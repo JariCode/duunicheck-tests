@@ -206,15 +206,16 @@ Foreign origins receive no CORS headers
     END
 
 Preflight from the allowed origin lists only the expected methods and headers
-    [Documentation]    TC10-007. Expected result: Preflight from the allowed origin lists only the expected methods and headers.
+    [Documentation]    TC10-007. Expected result: Preflight from the allowed origin lists exactly the methods GET,
+    ...    POST, PUT, PATCH (since the cover letter template of an application is changed with PATCH), DELETE
+    ...    and OPTIONS, no wildcard, and only the expected headers.
+    [Tags]    cors
     ${response}=    Preflight    ${ALLOWED_ORIGIN}
     Should Be True    ${response.status} in (200, 204)
     Should Be Equal    ${response.header('Access-Control-Allow-Origin')}    ${ALLOWED_ORIGIN}
     ${methods}=    Set Variable    ${response.header('Access-Control-Allow-Methods')}
-    FOR    ${method}    IN    GET    POST    PUT    DELETE
-        Should Contain    ${methods}    ${method}
-    END
-    Should Not Contain    ${methods}    PATCH
+    ${listed}=    Evaluate    sorted(part.strip() for part in $methods.split(','))
+    Should Be Equal    ${listed}    ${{ sorted(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) }}
     Should Not Contain    ${methods}    *
     ${allowed_headers}=    Convert To Lower Case    ${response.header('Access-Control-Allow-Headers')}
     Should Contain    ${allowed_headers}    authorization
@@ -229,6 +230,27 @@ Preflight from a foreign origin is not approved
         Should Be Empty    ${response.header('Access-Control-Allow-Origin')}
         Should Be Empty    ${response.header('Access-Control-Allow-Methods')}
     END
+
+PATCH preflight to the application template route is approved for the allowed origin only
+    [Documentation]    TC10-026. The app changes the cover letter template of an application with PATCH
+    ...    /api/applications/:id/template, which needs a CORS preflight. Expected result: an OPTIONS preflight
+    ...    from the allowed origin with Access-Control-Request-Method PATCH and the headers authorization and
+    ...    content-type answers 200 or 204 with Access-Control-Allow-Origin set to that origin, PATCH among the
+    ...    allowed methods and both headers allowed. The same preflight from a foreign origin gets no CORS
+    ...    headers.
+    [Tags]    cors
+    &{headers}=    Create Dictionary    Access-Control-Request-Method=PATCH    Access-Control-Request-Headers=authorization,content-type
+    ${response}=    Api Request    OPTIONS    /api/applications/${MISSING_ID}/template    origin=${ALLOWED_ORIGIN}    headers=${headers}
+    Should Be True    ${response.status} in (200, 204)    msg=The PATCH preflight got ${response.status}
+    Should Be Equal    ${response.header('Access-Control-Allow-Origin')}    ${ALLOWED_ORIGIN}
+    ${methods}=    Evaluate    [part.strip() for part in $response.header('Access-Control-Allow-Methods').split(',')]
+    Should Contain    ${methods}    PATCH
+    ${allowed_headers}=    Convert To Lower Case    ${response.header('Access-Control-Allow-Headers')}
+    Should Contain    ${allowed_headers}    authorization
+    Should Contain    ${allowed_headers}    content-type
+    ${foreign}=    Api Request    OPTIONS    /api/applications/${MISSING_ID}/template    origin=https://evil.example    headers=${headers}
+    Should Be Empty    ${foreign.header('Access-Control-Allow-Origin')}
+    Should Be Empty    ${foreign.header('Access-Control-Allow-Methods')}
 
 Unexpected request headers are not allowed by the preflight
     [Documentation]    TC10-009. Expected result: Unexpected request headers are not allowed by the preflight.

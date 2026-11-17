@@ -8,30 +8,35 @@ accounts and keys come from the gitignored `.env`. The TC number of every test i
 
 ## Test suites
 
-| Suite | What is tested |
-|---|---|
-| 01_landing_legal_pwa | Landing page with its title and canonical link, sign-in dialog, legal modals and their posting, file import, delete and font texts, no job site named, small screens, PWA manifest and icons, self-hosted fonts, third-party requests, secrets in the build (browser) |
-| 02_authentication_api | Every protected route needs a valid token; forged, tampered, expired and azp-less tokens are rejected |
-| 03_applications_api | Applications: CRUD, validation (five statuses incl. Hyväksytty), limits, dates, ordering |
-| 04_cvs_templates_api | CVs and cover-letter templates: CRUD, validation, limits |
-| 05_files_api | File upload and download: types, magic bytes, sizes, names, limits, download headers |
-| 06_conversations_assistant_api | Conversation history, local answers, AI endpoint checks, posting links are never fetched (internal and non-HTTPS links included), job posting parser (`parse-posting`): sign-in, validation, missing OpenAI key, nothing stored, real extraction and duplicate check (RUN_REAL_AI) |
-| 07_settings_api | Theme setting, validation and per-user separation |
-| 08_user_isolation_api | User B cannot read, change, delete or attach anything of user A |
-| 09_injection_security_api | NoSQL operators, prototype pollution, script strings, malformed and oversized JSON, CRLF |
-| 10_headers_cors_api | Security headers, CORS, preflight, error responses, headers and manifest MIME type in the published `frontend/public/.htaccess`, no sensitive files in a local frontend build, backend CSP, Permissions-Policy and no-store on every response, public addresses are not redirected to Clerk while signed-in routes still need a token, HSTS and CSP sources in the published `.htaccess`, `vite preview` sends the same headers and redirects the base path without a slash |
-| 11_webhook_api | Clerk webhook signature checks and input validation |
-| 12_ui_applications | Add, edit, change status, delete applications in the browser |
-| 12b_account_deletion_api | The user.deleted webhook removes all data of that user and only that user's |
-| 13_ui_materials_assistant | CV, template and file management, AI chat in the browser, posting draft option: locking of the context, error without OpenAI key, draft editing and saving, duplicate warning, small screens (parse-posting is mocked) |
-| 14_ui_navigation_settings | Navigation, theme persistence, user menu, signing out |
-| 15_ui_xss_security | Hostile strings stored through the API are rendered as text, no script runs |
-| 16_ui_pages_details | Dashboard (accepted applications in every theme), status Hyväksytty in the form, list, filter and timeline, progress timeline, calendar, search and stage filter, application details and events, status side effects, form cancel and limits, mobile menu, browser back |
-| 17_ui_materials_profile | CV editing with list chips and photo, template editing, deleting, file download and drop zone, AI chat context options, Clerk profile dialog and legal links in the user menu |
-| 18_import_delete_api | File import (`import-applications`, `remap`): sign-in, extension and content checks, macros, size, empty files, zip bombs, encrypted files, character set, PDF scripts, Excel/CSV/Word/PDF/TXT reading and conversion, duplicates, 50 row and 500 application limits, hidden instructions; `bulk-delete` and `find-applications`: sign-in, validation, own data only, no widening by regex characters |
-| 19_ui_import_delete | AI chat tool options and their locking, file import list and saving, undo import, delete search and confirmation, chat state across tabs, reload and sign-out, beforeunload warning, scrolling of long lists, privacy note, small screens (OpenAI answers mocked) |
-| 23_ui_print_pdf | Printing per device (tag `pdf-print`): the iOS home screen app shares the PDF made on the device (file name, type, size, canShare false, cancelled and failed share), Safari and the Dock app on a Mac open the PDF in a new tab or download it when the tab is blocked, other browsers keep calling window.print(); dashboard metric cards have equal font sizes on phones and do not stay tilted after a tap |
-| 99_rate_limits_api | API, upload and AI rate limits; the posting parser, the file import and the delete search share the AI limit, file imports count as uploads, bulk delete counts towards the API limit (needs the backend's ORIGINAL limits) |
+432 tests in 25 suites (dry run, 17 November 2026).
+
+| Suite | Tests | What is tested |
+|---|---|---|
+| 01_landing_legal_pwa | 44 | Landing page with its title and canonical link, sign-in dialog, legal modals and their posting, file import, delete and font texts, privacy policy section 5 (CV fields and conversation history sent to OpenAI) and the separate update dates of the privacy policy and the terms of use, no job site named, small screens, PWA manifest and icons, self-hosted fonts, third-party requests, secrets in the build (browser) |
+| 02_authentication_api | 17 | Every protected route needs a valid token; forged, tampered, expired and azp-less tokens are rejected |
+| 03_applications_api | 33 | Applications: CRUD, validation (five statuses incl. Hyväksytty), limits, dates, ordering, changing only the cover letter template with `PATCH /applications/:id/template` (409 with an attached cover letter file) |
+| 04_cvs_templates_api | 14 | CVs and cover-letter templates: CRUD, validation, limits |
+| 05_files_api | 17 | File upload and download: types, magic bytes, sizes, names, limits, download headers |
+| 06_conversations_assistant_api | 23 | Conversation history (local answers marked `source: local`), local answers, AI endpoint checks, posting links are never fetched (internal and non-HTTPS links included), job posting parser (`parse-posting`): sign-in, validation, missing OpenAI key, nothing stored, real extraction and duplicate check (RUN_REAL_AI) |
+| 07_settings_api | 9 | Theme setting, validation and per-user separation |
+| 08_user_isolation_api | 13 | User B cannot read, change, delete or attach anything of user A |
+| 09_injection_security_api | 17 | NoSQL operators, prototype pollution, script strings, malformed and oversized JSON, CRLF |
+| 10_headers_cors_api | 25 | Security headers, CORS, preflight (the exact allowed methods incl. PATCH, a PATCH preflight to the template route), error responses, headers and manifest MIME type in the published `frontend/public/.htaccess`, no sensitive files in a local frontend build, backend CSP, Permissions-Policy and no-store on every response, public addresses are not redirected to Clerk while signed-in routes still need a token, HSTS and CSP sources in the published `.htaccess`, `vite preview` sends the same headers and redirects the base path without a slash |
+| 11_webhook_api | 16 | Clerk webhook signature checks and input validation |
+| 12_ui_applications | 11 | Add, edit, change status, delete applications in the browser |
+| 12b_account_deletion_api | 6 | The user.deleted webhook removes all data of that user and only that user's |
+| 13_ui_materials_assistant | 14 | CV, template and file management, AI chat in the browser, posting draft option: locking of the context, error without OpenAI key, draft editing and saving, duplicate warning, small screens (parse-posting is mocked) |
+| 14_ui_navigation_settings | 9 | Navigation, theme persistence, user menu, signing out |
+| 15_ui_xss_security | 7 | Hostile strings stored through the API are rendered as text, no script runs |
+| 16_ui_pages_details | 33 | Dashboard (accepted applications in every theme), status Hyväksytty in the form, list, filter and timeline, progress timeline, calendar, search and stage filter, application details and events (the old type "Hakemus jätetty" is not offered but an old event keeps it when edited), status side effects, printing from the details (no recipient box), form cancel and limits, mobile menu, browser back |
+| 17_ui_materials_profile | 27 | CV editing with list chips and photo, template editing, deleting, file download and drop zone, AI chat context options, Clerk profile dialog and legal links in the user menu |
+| 18_import_delete_api | 32 | File import (`import-applications`, `remap`): sign-in, extension and content checks, macros, size, empty files, zip bombs, encrypted files, character set, PDF scripts, Excel/CSV/Word/PDF/TXT reading and conversion, duplicates, 50 row and 500 application limits, hidden instructions; `bulk-delete` and `find-applications`: sign-in, validation, own data only, no widening by regex characters |
+| 19_ui_import_delete | 16 | AI chat tool options and their locking, file import list and saving, event types of the import preview, undo import, delete search and confirmation, chat state across tabs, reload and sign-out, beforeunload warning, scrolling of long lists, privacy note, small screens (OpenAI answers mocked) |
+| 20_ui_dialogs | 11 | Keyboard and layering behaviour of every dialog: Escape (inner layer first), Tab kept inside, focus returned to the opening button, dialogs above the top bar |
+| 21_ui_assistant_context | 10 | Context rows of the AI chat and what the request asks for, formatted AI answers, saving an AI cover letter as a new template (button only with a letter and AI suggestions allowed, confirmation, " 2" names, the application's template changes, the old one stays, an application with a letter file keeps it), the 504 timeout message, local answers vs. the AI ("Lähetä AI:lle", editing requests go to the AI), the Finnish connection error (`/suggest` mocked, the rest reaches the backend) |
+| 22_backend_unit_tests | 2 | The application's own unit tests: `node --test` in the backend and `node --test src/utils` in the frontend |
+| 23_ui_print_pdf | 13 | Printing per device (tag `pdf-print`): the iOS home screen app shares the PDF made on the device (file name, type, size, canShare false, cancelled and failed share), Safari and the Dock app on a Mac open the PDF in a new tab or download it when the tab is blocked, other browsers keep calling window.print(); the new CV layout (contact line, Profiili section, no Yhteystiedot box, `--cv-gap` over 1 and one page for a short CV, 1 and two pages for a long CV) and the cover letter layout (date in the header, no recipient box, also for a template) in Chrome and in the PDFs of both devices; dashboard metric cards have equal font sizes on phones and do not stay tilted after a tap |
+| 99_rate_limits_api | 13 | API, upload and AI rate limits; the posting parser, the file import and the delete search share the AI limit, file imports count as uploads, bulk delete counts towards the API limit (needs the backend's ORIGINAL limits) |
 
 ## Folder structure
 
@@ -43,7 +48,8 @@ duunicheck-tests/
     libraries/
         DuuniCheckLibrary.py   raw HTTP requests, webhook signing, test files, forged tokens, connection recorder
         ImportTestFiles.py     generated import test files (xlsx, csv, docx, pdf, txt) from invented data
-        network_mocks.js       Browser library extension: mocks API responses (Playwright page.route)
+        PdfText.py             reads the page texts of the app's own pdfmake PDFs (suite 23), no PDF library needed
+        network_mocks.js       Browser library extension: mocks or blocks API responses (Playwright page.route)
         config.py              .env reader
     tests/                 the test suites
     .env                   your own settings (not in Git)
@@ -107,9 +113,16 @@ python -m robot tests/02_authentication_api.robot
 ```
 
 Tags: `api`, `browser`, `security`, `rate-limit`, `slow`, `known-gap`, `openai`, `no-openai-key`, `htaccess`, `build`, `import`,
-`invitation`, `finnish-errors`, `dialogs`, `unit`, `pdf-print`.
+`invitation`, `finnish-errors`, `dialogs`, `unit`, `pdf-print`, and for the changes of 16-17 November 2026: `cv-print`
+(TC23-008..010), `letter-print` (TC16-028, TC23-011..013), `privacy-policy` (TC01-045), `events` (TC16-033, TC19-016),
+`ai-letter` (TC03-033, TC21-005..008), `local-question` (TC06-003, TC21-009), `connection-error` (TC21-010), `cors`
+(TC10-007, TC10-026) and `frontend` (TC22-002). None of these selects a test tagged `openai` (the tag `privacy` does), so
+they are safe in a quick run through `tmp/robot-tags`, which always runs with `RUN_REAL_AI=true`.
 
-Suite 22 runs the backend's own unit tests (`node --test` in `APP_DIR/backend`) as one Robot test.
+Suite 22 runs the application's own unit tests as two Robot tests: `node --test` in `APP_DIR/backend` and
+`node --test src/utils` in `APP_DIR/frontend`. The backend tests cover the parts of the AI assistant that the browser
+tests mock: the structured reply (`output_text` as JSON `{reply, letter}`, plain text shown without a letter), the
+504 timeout, the conversation history and the template route.
 
 Robot is never run against the production site. The tests tagged `htaccess` (TC01-016, TC10-012, TC10-014,
 TC10-015) read `frontend/public/.htaccess` from `APP_DIR`, and TC10-016 builds the frontend into the gitignored
@@ -136,10 +149,13 @@ service's own, the data protection authority's and example.com. This public repo
 Network mocks: the Browser library has no request interception keyword, so `libraries/network_mocks.js`
 (loaded with `jsextension` in common.robot) adds `Mock Json Response`, `Get Mocked Request Bodies` and
 `Clear Mocked Responses`, plus `Start Recording Requests`, `Get Recorded Requests` and `Stop Recording Requests`,
-which record real requests without changing them. Suites 13 and 19 use them to test the posting draft, import and
-delete paths without OpenAI. `Emulate Print Device` adds an init script (Playwright `addInitScript`) to the active
+which record real requests without changing them, and `Abort Requests`, which makes matching requests fail at the
+network level (suite 21, the Finnish connection error). Suites 13, 19 and 21 use them to test the posting draft,
+import, delete and AI chat paths without OpenAI. `Emulate Print Device` adds an init script (Playwright `addInitScript`) to the active
 context: the app's JavaScript sees an iPhone home screen app or Mac Safari, and window.print, window.open,
-navigator.share and navigator.canShare record their calls. Suite 23 uses it through `resources/print_pdf.robot`.
+navigator.share and navigator.canShare record their calls (the shared File is kept as `window.__lastSharedFile`).
+Suite 23 uses it through `resources/print_pdf.robot`, reads the opened or shared PDF back in the page and checks its
+pages with `libraries/PdfText.py`; the Chrome print sheet is measured with Browser's `Emulate Media media=print`.
 
 ## Expected findings (`known-gap`)
 

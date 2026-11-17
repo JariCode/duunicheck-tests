@@ -48,6 +48,15 @@ Finish Printing
     Evaluate JavaScript    ${None}    () => window.dispatchEvent(new Event('afterprint'))
     Wait For Elements State    css=.print-document    detached
 
+Letter Sheet Should Have No Recipient Box
+    [Documentation]    The cover letter print sheet has the role as its heading and a date in the header
+    ...    (.letter-sender li.letter-date time), but no recipient box, so the company is not printed.
+    [Arguments]    ${company}    ${role}
+    Get Text    css=.print-document.print-application .letter-content h2    ==    ${role}
+    Get Element Count    css=.print-document.print-application .letter-sender li.letter-date time    ==    1
+    Get Element Count    css=.print-document.print-application .letter-recipient    ==    0
+    Get Text    css=.print-document.print-application    not contains    ${company}
+
 Delete Application Named
     [Documentation]    Deletes user A's applications with the given company (teardown helper).
     [Arguments]    ${company}
@@ -370,8 +379,11 @@ Browser back button follows the visited sections
 
 Details print the attached CV, the cover letter and the whole application
     [Documentation]    TC16-028. Expected result: "Tulosta sovelluksen CV", "Tulosta hakukirje" and
-    ...    "Tulosta hakemus / PDF" each open the print dialog with the matching print sheet. The
-    ...    print dialog is replaced by a counter; the real PDF output is checked by hand.
+    ...    "Tulosta hakemus / PDF" each open the print dialog with the matching print sheet. The two cover
+    ...    letter sheets show the letter, the role as its heading and the date in the header, and have no
+    ...    recipient box, so the company (not named in this letter) is not printed. The print dialog is
+    ...    replaced by a counter; the layout is checked in suite 23 and the real paper output by hand.
+    [Tags]    letter-print
     ${cv}=    Create Cv As    A    name=ROBOT Tulostus CV    fullName=Robot Tulostaja    title=Testiammattilainen
     ${template}=    Create Template As    A    name=ROBOT Tulostuspohja    body=Hei,\n\nRobot-kirjeen sisältö.
     Create Application As    A    company=ROBOT Tulostus Oy    role=Tulostaja    cvId=${cv}[id]    templateId=${template}[id]
@@ -387,12 +399,12 @@ Details print the attached CV, the cover letter and the whole application
     Click    css=.detail-document:has-text("Tulosta hakukirje: ROBOT Tulostuspohja")
     Print Count Should Become    2
     Get Text    css=.print-document.print-application    contains    Robot-kirjeen sisältö.
-    Get Text    css=.print-document.print-application    contains    ROBOT Tulostus Oy
+    Letter Sheet Should Have No Recipient Box    ROBOT Tulostus Oy    Tulostaja
     Finish Printing
     Click    css=.detail-print-actions >> text=Tulosta hakemus / PDF
     Print Count Should Become    3
-    Get Text    css=.print-document.print-application    contains    ROBOT Tulostus Oy
-    Get Text    css=.print-document.print-application    contains    Tulostaja
+    Get Text    css=.print-document.print-application    contains    Robot-kirjeen sisältö.
+    Letter Sheet Should Have No Recipient Box    ROBOT Tulostus Oy    Tulostaja
     Finish Printing
     Close Details
 
@@ -531,3 +543,37 @@ Overview counts accepted applications in every theme without horizontal scrollin
     [Teardown]    Run Keywords    Close Mobile Workspace
     ...    AND    Api Request    PUT    /api/settings    user=A    json_body=${{ {'theme': 'default'} }}
     ...    AND    Delete Application Named    ROBOT Hyväksytty Teema Oy
+
+Old event type Hakemus jätetty is not offered for new events but an old one can still be edited
+    [Documentation]    TC16-033. "Hakemus jätetty" meant the same as "Lähetetty" and is no longer offered. The
+    ...    application has an old event of that type. Expected result: the "Lisää tapahtuma" menu offers exactly
+    ...    Valitse tapahtuma, Lähetetty, Vastaus saatu, Haastattelu sovittu, Haastattelu pidetty, Tarjous,
+    ...    Hyväksytty, Hylätty and Muu tapahtuma. The old event is still shown as "Hakemus jätetty"; when it is
+    ...    edited, its menu keeps "Hakemus jätetty" selected (as the first option, before the offered types), and
+    ...    saving a new note keeps the type "Hakemus jätetty" in the account.
+    [Tags]    events
+    &{old}=    Create Dictionary    id=robot-old-1    type=Hakemus jätetty    date=2026-11-02    note=Vanha merkintä
+    Create Application As    A    company=ROBOT Vanha Tapahtuma Oy    status=Lähetetty    events=${{ [$old] }}
+    Reload
+    Wait For Workspace
+    Open Details    ROBOT Vanha Tapahtuma Oy
+    ${offered}=    Create List    Lähetetty    Vastaus saatu    Haastattelu sovittu    Haastattelu pidetty    Tarjous
+    ...    Hyväksytty    Hylätty    Muu tapahtuma
+    ${options}=    Get Select Options    css=.event-form select
+    ${labels}=    Evaluate    [option['label'] for option in $options]
+    Should Be Equal    ${labels}    ${{ ['Valitse tapahtuma'] + $offered }}
+    Get Text    css=.history li:has-text("Vanha merkintä") b    ==    Hakemus jätetty
+    Click    css=.history li:has-text("Vanha merkintä") >> button:text-is("Muokkaa")
+    ${options}=    Get Select Options    css=.history li select
+    ${labels}=    Evaluate    [option['label'] for option in $options]
+    Should Be Equal    ${labels}    ${{ ['Hakemus jätetty'] + $offered }}
+    Get Selected Options    css=.history li select    label    ==    Hakemus jätetty
+    Fill Text    css=.history li input[aria-label="Tapahtuman lisätieto"]    Muokattu vanha merkintä
+    Click    css=.history li >> button:text-is("Tallenna") >> nth=0
+    Wait For Elements State    css=.history li:has-text("Muokattu vanha merkintä")    visible
+    Get Text    css=.history li:has-text("Muokattu vanha merkintä") b    ==    Hakemus jätetty
+    ${saved}=    Application From Api    ROBOT Vanha Tapahtuma Oy
+    Should Be Equal    ${saved}[events][0][type]    Hakemus jätetty
+    Should Be Equal    ${saved}[events][0][note]    Muokattu vanha merkintä
+    Close Details
+    [Teardown]    Delete Application Named    ROBOT Vanha Tapahtuma Oy
