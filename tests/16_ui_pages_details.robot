@@ -65,6 +65,54 @@ Delete Application Named
         IF    $app['company'] == $company    Api Request    DELETE    /api/applications/${app}[id]    user=A
     END
 
+Detail Section Text
+    [Documentation]    The text (textContent, line breaks kept) of the details section with the given heading
+    ...    (Muistiinpanot, Vanha hakemusteksti), or None when the details have no such section.
+    [Arguments]    ${heading}
+    ${text}=    Evaluate JavaScript    ${None}
+    ...    (heading) => { const s = Array.from(document.querySelectorAll('.detail-card section.detail-copy')).find((x) => x.querySelector('h3')?.textContent === heading); return s ? s.querySelector('p').textContent : null }
+    ...    arg=${heading}
+    RETURN    ${text}
+
+Details Should Show Old Text
+    [Documentation]    Opens the details and checks the Muistiinpanot and Vanha hakemusteksti sections (None:
+    ...    no such section), then closes the details.
+    [Arguments]    ${company}    ${notes}    ${old_text}
+    Open Details    ${company}
+    ${shown}=    Detail Section Text    Muistiinpanot
+    Should Be Equal    ${shown}    ${notes}    msg=${company}: the details show the notes "${shown}"
+    ${shown}=    Detail Section Text    Vanha hakemusteksti
+    Should Be Equal    ${shown}    ${old_text}    msg=${company}: the details show the old application text "${shown}"
+    Close Details
+
+Stored Text Should Be
+    [Documentation]    The stored application has the given notes and applicationText (and status, if given).
+    [Arguments]    ${company}    ${notes}    ${application_text}    ${status}=${None}
+    ${app}=    Application From Api    ${company}
+    Should Be Equal    ${app}[notes]    ${notes}    msg=${company}: stored notes
+    Should Be Equal    ${app}[applicationText]    ${application_text}    msg=${company}: stored applicationText
+    IF    $status is not None    Should Be Equal    ${app}[status]    ${status}
+
+Change Stage In List
+    [Documentation]    Changes the stage with the status picker of the list row and waits until it is stored.
+    [Arguments]    ${company}    ${stage}
+    Go To Section    Hakemukset
+    Select Options By    css=select[aria-label="Vaihda hakemuksen ${company} vaihe"]    label    ${stage}
+    Wait Until Keyword Succeeds    10s    500ms    Stored Status Should Be    ${company}    ${stage}
+
+Stored Status Should Be
+    [Arguments]    ${company}    ${stage}
+    ${app}=    Application From Api    ${company}
+    Should Be Equal    ${app}[status]    ${stage}
+
+Saved Application Texts
+    [Documentation]    The applicationText values of the PUT /api/applications/:id bodies the app sent since Start
+    ...    Recording Requests, oldest first.
+    ${recorded}=    Get Recorded Requests
+    ${texts}=    Evaluate    [json.loads(r['body']).get('applicationText') for r in json.loads($recorded) if r['method'] == 'PUT']
+    ...    modules=json
+    RETURN    ${texts}
+
 Application From Api
     [Arguments]    ${company}
     ${api}=    Api Request    GET    /api/applications    user=A
@@ -377,13 +425,16 @@ Browser back button follows the visited sections
     Wait For Workspace
     Wait For Elements State    css=.list-tools    visible
 
-Details print the attached CV, the cover letter and the whole application
+Details print the attached CV, the cover letter and the application summary
     [Documentation]    TC16-028. Expected result: "Tulosta sovelluksen CV", "Tulosta hakukirje" and
-    ...    "Tulosta hakemus / PDF" each open the print dialog with the matching print sheet. The two cover
-    ...    letter sheets show the letter, the role as its heading and the date in the header, and have no
-    ...    recipient box, so the company (not named in this letter) is not printed. The print dialog is
-    ...    replaced by a counter; the layout is checked in suite 23 and the real paper output by hand.
-    [Tags]    letter-print
+    ...    "Tulosta yhteenveto / PDF" (until 17 November 2026 "Tulosta hakemus / PDF", which printed the cover
+    ...    letter again) each open the print dialog with the matching print sheet. The cover letter sheet shows
+    ...    the letter, the role as its heading and the date in the header, and has no recipient box, so the
+    ...    company (not named in this letter) is not printed. The summary sheet (print-applicationSummary) has
+    ...    the title bar HAKEMUS, the role as its heading, the company and the names of the CV and the template,
+    ...    but not the letter. The print dialog is replaced by a counter; the layout is checked in suite 23 and
+    ...    the real paper output by hand.
+    [Tags]    letter-print    application-summary
     ${cv}=    Create Cv As    A    name=ROBOT Tulostus CV    fullName=Robot Tulostaja    title=Testiammattilainen
     ${template}=    Create Template As    A    name=ROBOT Tulostuspohja    body=Hei,\n\nRobot-kirjeen sisältö.
     Create Application As    A    company=ROBOT Tulostus Oy    role=Tulostaja    cvId=${cv}[id]    templateId=${template}[id]
@@ -401,10 +452,16 @@ Details print the attached CV, the cover letter and the whole application
     Get Text    css=.print-document.print-application    contains    Robot-kirjeen sisältö.
     Letter Sheet Should Have No Recipient Box    ROBOT Tulostus Oy    Tulostaja
     Finish Printing
-    Click    css=.detail-print-actions >> text=Tulosta hakemus / PDF
+    Click    css=.detail-print-actions >> button:text-is("Tulosta yhteenveto / PDF")
     Print Count Should Become    3
-    Get Text    css=.print-document.print-application    contains    Robot-kirjeen sisältö.
-    Letter Sheet Should Have No Recipient Box    ROBOT Tulostus Oy    Tulostaja
+    ${summary}=    Set Variable    css=.print-document.print-applicationSummary
+    Get Text    ${summary} >> css=.letter-titlebar    ==    HAKEMUS
+    Get Text    ${summary} >> css=.summary-header h1    ==    Tulostaja
+    Get Text    ${summary} >> css=.summary-header p    ==    ROBOT Tulostus Oy
+    Get Text    ${summary}    contains    ROBOT Tulostus CV
+    Get Text    ${summary}    contains    ROBOT Tulostuspohja
+    Get Text    ${summary}    not contains    Robot-kirjeen sisältö.
+    Get Element Count    css=.print-document.print-application    ==    0
     Finish Printing
     Close Details
 
@@ -577,3 +634,157 @@ Old event type Hakemus jätetty is not offered for new events but an old one can
     Should Be Equal    ${saved}[events][0][note]    Muokattu vanha merkintä
     Close Details
     [Teardown]    Delete Application Named    ROBOT Vanha Tapahtuma Oy
+
+Old application text alone is shown as the notes and saved into the notes
+    [Documentation]    TC16-034. The application has only an old application text (applicationText), no notes,
+    ...    as applications saved before the notes field. Expected result: the details show the text under
+    ...    Muistiinpanot and have no "Vanha hakemusteksti" section, and the edit form has it in the notes field.
+    ...    Saving the form sends applicationText "" (the text was moved) and stores the text as the notes; after
+    ...    a reload the notes show the text exactly once.
+    [Tags]    old-application-text
+    ${company}=    Set Variable    ROBOT Pelkkä Teksti Oy
+    ${text}=    Set Variable    Hei,\n\nHaen myyjän tehtävää, koska pidän asiakkaiden kanssa työskentelystä.\n\nYstävällisin terveisin,\nMatti Meikäläinen
+    Create Application As    A    company=${company}    role=Myyjä    applicationText=${text}
+    Reload
+    Wait For Workspace
+    Details Should Show Old Text    ${company}    ${text}    ${None}
+    Go To Section    Hakemukset
+    Click    css=.job-row:has-text("${company}") >> button:text-is("Muokkaa")
+    Wait For Elements State    text=Tallenna muutokset →    visible
+    Get Property    xpath=//label[contains(., "Muistiinpanot")]//textarea    value    ==    ${text}
+    Start Recording Requests    /api/applications/
+    Click    text=Tallenna muutokset →
+    Wait For Elements State    css=.application-form-overlay    detached
+    Wait Until Keyword Succeeds    10s    500ms    Stored Text Should Be    ${company}    ${text}    ${EMPTY}
+    ${sent}=    Saved Application Texts
+    Should Be Equal    ${sent}    ${{ [''] }}
+    Get Element Count    css=.api-error    ==    0
+    Reload
+    Wait For Workspace
+    Details Should Show Old Text    ${company}    ${text}    ${None}
+    [Teardown]    Run Keywords    Stop Recording Requests    AND    Delete Application Named    ${company}
+
+Notes and an old application text are merged under Hakemusteksti and nothing is lost or doubled
+    [Documentation]    TC16-035. One application has notes and an old application text that fit in 8 000
+    ...    characters together; another has notes that already contain its old application text (moved earlier)
+    ...    and the same text still stored. Expected result: the first shows "<notes>\\n\\nHakemusteksti:\\n<text>"
+    ...    as its notes and no "Vanha hakemusteksti"; a stage change in the list sends applicationText "" and
+    ...    stores exactly that merged text as the notes. The second shows its notes unchanged (the text is not
+    ...    added a second time); adding an event in the details stores the same notes and applicationText "".
+    ...    Both saved notes still contain the whole original notes and the whole original text.
+    [Tags]    old-application-text
+    ${first}=    Set Variable    ROBOT Yhdistetty Oy
+    ${notes}=    Set Variable    Oma muistiinpano.\nSoita perjantaina.
+    ${text}=    Set Variable    Hei,\n\nHaen tehtävää, koska osaan testata verkkosovelluksia.\n\nTerveisin Matti Meikäläinen
+    ${merged}=    Set Variable    ${notes}\n\nHakemusteksti:\n${text}
+    ${second}=    Set Variable    ROBOT Jo Siirretty Oy
+    ${text2}=    Set Variable    Aiemmin siirretty hakemusteksti.
+    ${notes2}=    Set Variable    Muistiinpano ennen siirtoa.\n\nHakemusteksti:\n${text2}
+    Create Application As    A    company=${first}    role=Testaaja    notes=${notes}    applicationText=${text}
+    Create Application As    A    company=${second}    role=Testaaja    notes=${notes2}    applicationText=${text2}
+    Reload
+    Wait For Workspace
+    Details Should Show Old Text    ${first}    ${merged}    ${None}
+    Details Should Show Old Text    ${second}    ${notes2}    ${None}
+    Start Recording Requests    /api/applications/
+    Change Stage In List    ${first}    Lähetetty
+    Stored Text Should Be    ${first}    ${merged}    ${EMPTY}    Lähetetty
+    Open Details    ${second}
+    Select Options By    css=.event-form select    label    Muu tapahtuma
+    Fill Text    css=.event-form input[maxlength="300"]    Robot-siirtotapahtuma
+    Click    css=.event-form button[type="submit"]
+    Wait For Elements State    css=.history li:has-text("Robot-siirtotapahtuma")    visible
+    Close Details
+    Stored Text Should Be    ${second}    ${notes2}    ${EMPTY}
+    ${sent}=    Saved Application Texts
+    Should Be Equal    ${sent}    ${{ ['', ''] }}
+    FOR    ${company}    ${original}    IN    ${first}    ${notes}    ${first}    ${text}    ${second}    ${text2}
+        ${app}=    Application From Api    ${company}
+        Should Contain    ${app}[notes]    ${original}
+    END
+    ${app}=    Application From Api    ${second}
+    ${count}=    Evaluate    $app['notes'].count($text2)
+    Should Be Equal As Integers    ${count}    1    msg=The old application text is ${count} times in the notes
+    Get Element Count    css=.api-error    ==    0
+    [Teardown]    Run Keywords    Stop Recording Requests    AND    Delete Application Named    ${first}
+    ...    AND    Delete Application Named    ${second}
+
+Old application text too long for the notes stays read-only and every save keeps it
+    [Documentation]    TC16-036. One application has 3 000 characters of notes and a 6 000 character old
+    ...    application text (over 8 000 together), another only an old application text of 9 000 characters.
+    ...    Expected result: the details show the notes unchanged under Muistiinpanot (the second has none) and the
+    ...    text read-only under "Vanha hakemusteksti"; the edit form has only the notes. A stage change in the
+    ...    list, an event added in the details and a save of the edit form all succeed without an error, every
+    ...    PUT sends the original applicationText, and the server keeps the notes and the text unchanged; the
+    ...    details still show "Vanha hakemusteksti" after the saves.
+    [Tags]    old-application-text
+    ${first}=    Set Variable    ROBOT Pitkä Teksti Oy
+    ${second}=    Set Variable    ROBOT Yksin Pitkä Oy
+    ${notes}=    Evaluate    ('Muistiinpano pitkästä hausta. ' * 120)[:2999] + '.'
+    ${text}=    Evaluate    ('Vanha hakemusteksti kertoo osaamisesta. ' * 160)[:5999] + '.'
+    ${alone}=    Evaluate    ('Pitkä vanha hakemusteksti ilman muistiinpanoja. ' * 200)[:8999] + '.'
+    Should Be True    len($notes) + len($text) + 17 > 8000 and len($alone) > 8000
+    Create Application As    A    company=${first}    role=Testaaja    notes=${notes}    applicationText=${text}
+    Create Application As    A    company=${second}    role=Testaaja    applicationText=${alone}
+    Reload
+    Wait For Workspace
+    Details Should Show Old Text    ${first}    ${notes}    ${text}
+    Details Should Show Old Text    ${second}    ${None}    ${alone}
+    Start Recording Requests    /api/applications/
+    Change Stage In List    ${first}    Lähetetty
+    Stored Text Should Be    ${first}    ${notes}    ${text}    Lähetetty
+    Open Details    ${first}
+    Select Options By    css=.event-form select    label    Muu tapahtuma
+    Fill Text    css=.event-form input[maxlength="300"]    Robot-pitkä-tapahtuma
+    Click    css=.event-form button[type="submit"]
+    Wait For Elements State    css=.history li:has-text("Robot-pitkä-tapahtuma")    visible
+    Get Element Count    css=.event-error    ==    0
+    Close Details
+    ${app}=    Application From Api    ${first}
+    ${types}=    Evaluate    [e['note'] for e in $app['events']]
+    Should Contain    ${types}    Robot-pitkä-tapahtuma
+    Stored Text Should Be    ${first}    ${notes}    ${text}
+    Go To Section    Hakemukset
+    Click    css=.job-row:has-text("${first}") >> button:text-is("Muokkaa")
+    Wait For Elements State    text=Tallenna muutokset →    visible
+    Get Property    xpath=//label[contains(., "Muistiinpanot")]//textarea    value    ==    ${notes}
+    Click    text=Tallenna muutokset →
+    Wait For Elements State    css=.application-form-overlay    detached
+    Change Stage In List    ${second}    Lähetetty
+    Stored Text Should Be    ${first}    ${notes}    ${text}
+    Stored Text Should Be    ${second}    ${EMPTY}    ${alone}    Lähetetty
+    ${sent}=    Saved Application Texts
+    Should Be Equal    ${sent}    ${{ [$text, $text, $text, $alone] }}
+    Get Element Count    css=.api-error    ==    0
+    Details Should Show Old Text    ${first}    ${notes}    ${text}
+    Details Should Show Old Text    ${second}    ${None}    ${alone}
+    [Teardown]    Run Keywords    Stop Recording Requests    AND    Delete Application Named    ${first}
+    ...    AND    Delete Application Named    ${second}
+
+Old application text is moved into the notes up to exactly 8 000 characters
+    [Documentation]    TC16-037. The 8 000 character limit of the notes (the server's limit, counted after
+    ...    trimming) decides. One application has 1 000 characters of notes and an old text that makes
+    ...    "<notes>\\n\\nHakemusteksti:\\n<text>" exactly 8 000 characters, another one character more.
+    ...    Expected result: the first shows the merged text as its notes and a stage change stores it (8 000
+    ...    characters) with applicationText ""; the second shows the notes and "Vanha hakemusteksti" separately
+    ...    and a stage change keeps both unchanged.
+    [Tags]    old-application-text
+    ${fits}=    Set Variable    ROBOT Raja Mahtuu Oy
+    ${over}=    Set Variable    ROBOT Raja Ylittyy Oy
+    ${notes}=    Evaluate    ('Muistio ' * 200)[:999] + '.'
+    ${text}=    Evaluate    ('Rajateksti ' * 1000)[:8000 - 1000 - 17 - 1] + '.'
+    ${text_over}=    Evaluate    ('Rajateksti ' * 1000)[:8000 - 1000 - 17] + '.'
+    ${merged}=    Set Variable    ${notes}\n\nHakemusteksti:\n${text}
+    Length Should Be    ${merged}    8000
+    Create Application As    A    company=${fits}    role=Testaaja    notes=${notes}    applicationText=${text}
+    Create Application As    A    company=${over}    role=Testaaja    notes=${notes}    applicationText=${text_over}
+    Reload
+    Wait For Workspace
+    Details Should Show Old Text    ${fits}    ${merged}    ${None}
+    Details Should Show Old Text    ${over}    ${notes}    ${text_over}
+    Change Stage In List    ${fits}    Lähetetty
+    Change Stage In List    ${over}    Lähetetty
+    Stored Text Should Be    ${fits}    ${merged}    ${EMPTY}
+    Stored Text Should Be    ${over}    ${notes}    ${text_over}
+    Get Element Count    css=.api-error    ==    0
+    [Teardown]    Run Keywords    Delete Application Named    ${fits}    AND    Delete Application Named    ${over}

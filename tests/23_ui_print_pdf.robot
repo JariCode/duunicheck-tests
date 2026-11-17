@@ -17,9 +17,26 @@ ${CV_NAME}          ROBOT Tulostus-CV
 ${FULL_NAME}        Väinö Testinen
 ${TEMPLATE_NAME}    ROBOT Tulostuspohja
 ${COMPANY}          ROBOT Tulostin Oy
-# printPdf.js pdfFileName: CV_<full name>, Hakemus_<company>, spaces as underscores.
+# printPdf.js pdfFileName: CV_<full name>, Hakemus_<company> for the cover letter ("Tulosta hakukirje"),
+# Hakemus_<company>_<role> for the application summary ("Tulosta yhteenveto / PDF"), spaces as underscores.
 ${CV_PDF}           CV_Väinö_Testinen.pdf
 ${APPLICATION_PDF}    Hakemus_ROBOT_Tulostin_Oy.pdf
+${SUMMARY_PDF}      Hakemus_ROBOT_Tulostin_Oy_Testaaja.pdf
+# The application summary tests (TC23-014..020). Every name, address and number is made up.
+${FULL_COMPANY}     ROBOT Esimerkki Oy
+${FULL_ROLE}        Frontend-kehittäjä
+${FULL_LINK}        https://example.com/tyopaikat/frontend-kehittaja
+${FULL_NOTES}       Rekrytoija: Matti Meikäläinen, matti.meikalainen@example.com\nPuhelin +358 00 000 0000\n\nKysy etätyön mahdollisuudesta.
+${FULL_TEMPLATE}    ROBOT Yhteenvedon pohja
+${FULL_PDF}         Hakemus_ROBOT_Esimerkki_Oy_Frontend-kehittäjä.pdf
+${MINIMAL_COMPANY}    ROBOT Vähäinen Oy
+${DELETED_COMPANY}    ROBOT Poistettu Liite Oy
+${DELETED_CV_NAME}    ROBOT Poistuva CV
+${KEPT_LETTER}      robot-yhteenveto-kirje.txt
+${DELETED_LETTER}    robot-poistuva-kirje.txt
+${OLD_TEXT_COMPANY}    ROBOT Vanha Teksti Oy
+${OLD_TEXT_NOTES}    Oma muistiinpano: soita rekrytoijalle.
+${OLD_TEXT_PDF}     Hakemus_ROBOT_Vanha_Teksti_Oy_Myyjä.pdf
 # The CVs and the template of the layout tests (TC23-008..013). Every name and address is made up.
 ${PERSON}           Matti Meikäläinen
 ${PERSON_EMAIL}     matti.meikalainen@example.com
@@ -39,7 +56,90 @@ Prepare Print Suite
     Prepare Players    A
     Delete All Data    A
     Prepare Layout Data
+    Prepare Summary Data
     Prepare Print Data    ${CV_NAME}    ${FULL_NAME}    ${TEMPLATE_NAME}    ${COMPANY}
+
+Prepare Summary Data
+    [Documentation]    The applications of the summary tests, saved before Prepare Print Data, which reloads the
+    ...    workspace: a full one (every fact, an app CV and a template, three events, notes), a minimal one
+    ...    (only company and role), one whose CV and one of two cover letter files are hidden from the app in
+    ...    TC23-019, and one with an old application text too long to be moved into its notes.
+    ${template}=    Create Template As    A    name=${FULL_TEMPLATE}
+    ${expr}=    Catenate
+    ...    [
+    ...    {'id': '1', 'type': 'Lähetetty', 'date': '2026-11-02', 'note': 'Lähetetty sähköpostilla'},
+    ...    {'id': '2', 'type': 'Vastaus saatu', 'date': '2026-11-05', 'note': ''},
+    ...    {'id': '3', 'type': 'Haastattelu sovittu', 'date': '2026-11-10', 'note': 'Etähaastattelu klo 10'}]
+    ${events}=    Evaluate    ${expr}
+    Create Application As    A    company=${FULL_COMPANY}    role=${FULL_ROLE}    place=Helsinki    link=${FULL_LINK}
+    ...    status=Haastattelu sovittu    added=2026-11-02    respondedAt=2026-11-05    next=Valmistaudu haastatteluun
+    ...    nextDate=2026-11-20    notes=${FULL_NOTES}    cvId=${SHORT_CV}[id]    templateId=${template}[id]
+    ...    events=${events}
+    Create Application As    A    company=${MINIMAL_COMPANY}    role=Harjoittelija
+    ${cv}=    Create Cv As    A    name=${DELETED_CV_NAME}
+    ${kept}=    Upload Text File As    A    application    ${KEPT_LETTER}    Säilyvä hakukirje
+    ${deleted}=    Upload Text File As    A    application    ${DELETED_LETTER}    Poistuva hakukirje
+    Create Application As    A    company=${DELETED_COMPANY}    role=Testaaja    cvId=${cv}[id]
+    ...    applicationFileIds=${{ [$kept['id'], $deleted['id']] }}
+    Set Suite Variable    ${DELETED_CV_ID}    ${cv}[id]
+    Set Suite Variable    ${DELETED_LETTER_ID}    ${deleted}[id]
+    ${text}=    Evaluate
+    ...    '\\n\\n'.join(f'Kappale {n}. Olen kiinnostunut tehtävästä, koska haluan kehittää asiakaspalvelua ja myyntiä yhdessä tiimin kanssa.' for n in range(1, 81))
+    Should Be True    len($OLD_TEXT_NOTES) + len($text) + 17 > 8000 and len($text) <= 20000
+    Create Application As    A    company=${OLD_TEXT_COMPANY}    role=Myyjä    notes=${OLD_TEXT_NOTES}
+    ...    applicationText=${text}
+    Set Suite Variable    ${OLD_TEXT}    ${text}
+
+Full Summary
+    [Documentation]    What the summary of the full application (Prepare Summary Data) shows: the facts in
+    ...    their order, the attachments by name, the events newest first, the notes; the link without its scheme.
+    ${expr}=    Catenate
+    ...    {
+    ...    'title': $FULL_ROLE, 'subtitle': $FULL_COMPANY + ' · Helsinki',
+    ...    'headings': ['Perustiedot', 'Liitteet', 'Tapahtumahistoria', 'Muistiinpanot'],
+    ...    'facts': [['Yritys', $FULL_COMPANY], ['Tehtävä', $FULL_ROLE], ['Sijainti', 'Helsinki'],
+    ...    ['Ilmoituksen linkki', 'example.com/tyopaikat/frontend-kehittaja'], ['Vaihe', 'Haastattelu sovittu'],
+    ...    ['Lähetyspäivä', '02.11.2026'], ['Vastauspäivä', '05.11.2026'],
+    ...    ['Seuraava tehtävä', 'Valmistaudu haastatteluun'], ['Muistutuspäivä', '20.11.2026']],
+    ...    'attachments': [['Sovelluksen CV', $SHORT_CV_NAME], ['Hakemuspohja', $FULL_TEMPLATE]],
+    ...    'events': [['10.11.2026', 'Haastattelu sovittu', 'Etähaastattelu klo 10'], ['05.11.2026', 'Vastaus saatu', ''],
+    ...    ['02.11.2026', 'Lähetetty', 'Lähetetty sähköpostilla']],
+    ...    'notes': $FULL_NOTES, 'applicationText': None,
+    ...    'link': {'href': $FULL_LINK, 'text': 'example.com/tyopaikat/frontend-kehittaja'}}
+    ${expected}=    Evaluate    ${expr}
+    RETURN    ${expected}
+
+Minimal Summary
+    ${expr}=    Catenate
+    ...    {
+    ...    'title': 'Harjoittelija', 'subtitle': $MINIMAL_COMPANY, 'headings': ['Perustiedot'],
+    ...    'facts': [['Yritys', $MINIMAL_COMPANY], ['Tehtävä', 'Harjoittelija'], ['Vaihe', 'Kiinnostava']],
+    ...    'attachments': None, 'events': None, 'notes': None, 'applicationText': None, 'link': None}
+    ${expected}=    Evaluate    ${expr}
+    RETURN    ${expected}
+
+Old Text Summary
+    ${expr}=    Catenate
+    ...    {
+    ...    'title': 'Myyjä', 'subtitle': $OLD_TEXT_COMPANY,
+    ...    'headings': ['Perustiedot', 'Muistiinpanot', 'Vanha hakemusteksti'],
+    ...    'facts': [['Yritys', $OLD_TEXT_COMPANY], ['Tehtävä', 'Myyjä'], ['Vaihe', 'Kiinnostava']],
+    ...    'attachments': None, 'events': None, 'notes': $OLD_TEXT_NOTES, 'applicationText': $OLD_TEXT, 'link': None}
+    ${expected}=    Evaluate    ${expr}
+    RETURN    ${expected}
+
+Mock Lists Without
+    [Documentation]    Makes the app's GET /api/cvs and GET /api/files answer the real lists without the given
+    ...    CV and file, as if they had been deleted while the application still points to them. The workspace
+    ...    is reloaded afterwards. The lists are read before the device session is opened, because Api Request
+    ...    switches back to player A's own session.
+    [Arguments]    ${cvs}    ${files}    ${cv_id}    ${file_id}
+    ${cv_body}=    Evaluate    json.dumps([c for c in $cvs if c['id'] != $cv_id])    modules=json
+    ${file_body}=    Evaluate    json.dumps([f for f in $files if f['id'] != $file_id])    modules=json
+    Mock Json Response    **/api/cvs    200    ${cv_body}
+    Mock Json Response    **/api/files    200    ${file_body}
+    Reload
+    Wait For Workspace
 
 Prepare Layout Data
     [Documentation]    A short CV that fits on one page even with the largest gaps (1.8), a long CV that does
@@ -99,7 +199,7 @@ Open Pdf On Mac Safari
     [Documentation]    In the Mac Safari session: the PDF dialog gets ready, "Avaa PDF" opens the PDF's blob
     ...    URL in a new tab (_blank), the dialog closes and the app window never prints. Returns the text
     ...    of every page of the opened PDF.
-    [Arguments]    ${file_name}
+    [Arguments]    ${file_name}    ${min_bytes}=${MIN_PDF_BYTES}
     Pdf Dialog Should Become Ready    ${file_name}    ${OPEN_PDF_BUTTON}
     Get Text    ${PDF_DIALOG_TEXT}    contains    Paina Avaa PDF
     Get Element Count    ${SHARE_PDF_BUTTON}    ==    0
@@ -110,7 +210,7 @@ Open Pdf On Mac Safari
     ${opened}=    Set Variable    ${capture}[opened][0]
     Should Start With    ${opened}[url]    blob:
     Should Be Equal    ${opened}[target]    _blank
-    Blob Should Be A Pdf    ${opened}[url]
+    Blob Should Be A Pdf    ${opened}[url]    ${min_bytes}
     App Window Should Not Print
     Get Element Count    css=.print-document    ==    0
     ${capture}=    Print Capture
@@ -165,20 +265,21 @@ Metric Should Be Tilted
 
 
 *** Test Cases ***
-iPhone home screen app shares the CV and the application as PDF files
+iPhone home screen app shares the CV and the application summary as PDF files
     [Documentation]    TC23-001. The app runs as an iPhone home screen app (iPhone user agent,
     ...    navigator.standalone = true, phone session 390 px). Expected result: "Tulosta / tallenna PDF" of the
-    ...    CV card and "Tulosta hakemus / PDF" in the application details open the PDF dialog, which goes from
+    ...    CV card and "Tulosta yhteenveto / PDF" in the application details open the PDF dialog, which goes from
     ...    "Luodaan PDF:ää…" to "PDF on valmis" and shows "Tulosta / jaa PDF". The button hands one file to
-    ...    navigator.share: CV_Väinö_Testinen.pdf and Hakemus_ROBOT_Tulostin_Oy.pdf, type application/pdf,
+    ...    navigator.share: CV_Väinö_Testinen.pdf and Hakemus_ROBOT_Tulostin_Oy_Testaaja.pdf (title "Hakemus –
+    ...    ROBOT Tulostin Oy"), type application/pdf,
     ...    over 10 kB, after navigator.canShare has accepted the same file. The dialog then closes, no print
     ...    sheet is rendered and window.print() is never called.
     Open Print Device Workspace    iphone    390    844    mobile=${True}
     Print Cv From Materials    ${CV_NAME}
     Share Pdf On iPhone    ${CV_PDF}    CV – ${FULL_NAME}
     Clear Print Capture
-    Print Application From Details    ${COMPANY}
-    Share Pdf On iPhone    ${APPLICATION_PDF}    Hakemus – ${COMPANY}
+    Print Summary From Details    ${COMPANY}
+    Share Pdf On iPhone    ${SUMMARY_PDF}    Hakemus – ${COMPANY}
     [Teardown]    Close Mobile Workspace
 
 iPhone home screen app explains when the PDF cannot be shared
@@ -233,10 +334,10 @@ iPhone home screen app keeps the dialog open when sharing is cancelled and shows
     App Window Should Not Print
     [Teardown]    Close Mobile Workspace
 
-Mac Safari opens the CV and the application PDF in a new tab
+Mac Safari opens the CV and the application summary PDF in a new tab
     [Documentation]    TC23-004. The app runs as Safari on a Mac (Mac Safari user agent, no
     ...    navigator.userAgentData, maxTouchPoints 0). Expected result: printing the CV and the application
-    ...    opens the PDF dialog with "Avaa PDF" (not the share button). "Avaa PDF" calls window.open with the
+    ...    summary ("Tulosta yhteenveto / PDF", Hakemus_ROBOT_Tulostin_Oy_Testaaja.pdf) opens the PDF dialog with "Avaa PDF" (not the share button). "Avaa PDF" calls window.open with the
     ...    blob URL of the PDF and the target _blank, the blob is a PDF of over 10 kB, the dialog closes,
     ...    nothing is shared and window.print() of the app window is never called. The new tab is a stand-in
     ...    that never loads; the print dialog of the real PDF tab is checked by hand.
@@ -248,8 +349,8 @@ Mac Safari opens the CV and the application PDF in a new tab
     Print Cv From Materials    ${CV_NAME}
     Open Pdf On Mac Safari    ${CV_PDF}
     Clear Print Capture
-    Print Application From Details    ${COMPANY}
-    Open Pdf On Mac Safari    ${APPLICATION_PDF}
+    Print Summary From Details    ${COMPANY}
+    Open Pdf On Mac Safari    ${SUMMARY_PDF}
     ${capture}=    Print Capture
     Should Be Equal As Integers    ${capture}[stubPrints]    0
     [Teardown]    Close Mobile Workspace
@@ -284,14 +385,15 @@ Mac Safari downloads the PDF when the new tab is blocked
 
 Chrome still prints with window.print without the PDF dialog
     [Documentation]    TC23-006. The browser is Chromium as it is (not Safari, not iOS). Expected result: printing
-    ...    the CV and the application renders the print sheet and calls window.print() exactly once each; the
-    ...    PDF dialog never opens, nothing is shared and no new tab is opened.
+    ...    the CV and the application summary renders the print sheet (print-cv, print-applicationSummary) and
+    ...    calls window.print() exactly once each; the PDF dialog never opens, nothing is shared and no new tab
+    ...    is opened.
     Open Print Device Workspace    chrome
     Print Cv From Materials    ${CV_NAME}
     Print In Chrome    print-cv    ${FULL_NAME}
     Clear Print Capture
-    Print Application From Details    ${COMPANY}
-    Print In Chrome    print-application    ${COMPANY}
+    Print Summary From Details    ${COMPANY}
+    Print In Chrome    print-applicationSummary    ${COMPANY}
     [Teardown]    Close Mobile Workspace
 
 Metric cards have equal font sizes on phones and do not stay tilted after a tap
@@ -407,9 +509,10 @@ iPhone home screen app shares the CV PDF with the new layout on one or two pages
     [Teardown]    Close Mobile Workspace
 
 Chrome prints the cover letter with the date in the header and no recipient box
-    [Documentation]    TC23-011. The HAKUKIRJE print sheet in Chrome from "Tulosta hakukirje" and "Tulosta
-    ...    hakemus / PDF" in the details and from the template card in CV & pohjat. Expected result: none of
-    ...    them has the recipient box (.letter-address-row, .letter-recipient, the labels Vastaanottaja and
+    [Documentation]    TC23-011. The HAKUKIRJE print sheet in Chrome from "Tulosta hakukirje" in the details
+    ...    and from the template card in CV & pohjat; "Tulosta yhteenveto / PDF" (until 17 November 2026
+    ...    "Tulosta hakemus / PDF", which printed the same letter) now prints the HAKEMUS summary without any
+    ...    part of the letter. Expected result: neither letter print has the recipient box (.letter-address-row, .letter-recipient, the labels Vastaanottaja and
     ...    Päiväys) or the place of the application (Esimerkkilä, shown only in that box), and the header's
     ...    contact list ends with today's date (li.letter-date time, e.g. "17. marraskuuta 2026") after the
     ...    email and the phone. The template print, which had no date before, now has it too.
@@ -421,9 +524,11 @@ Chrome prints the cover letter with the date in the header and no recipient box
     Letter Print Sheet Should Have The Date In The Header    ${contacts}    Esimerkkilä
     Get Text    css=.print-document .letter-content h2    ==    Testaaja
     Finish Chrome Print
-    Click    css=.detail-print-actions >> button:text-is("Tulosta hakemus / PDF")
-    Wait For Chrome Print    print-application
-    Letter Print Sheet Should Have The Date In The Header    ${contacts}    Esimerkkilä
+    Click    ${SUMMARY_BUTTON}
+    Wait For Chrome Print    print-applicationSummary
+    Get Text    ${SUMMARY_SHEET} >> css=.letter-titlebar    ==    HAKEMUS
+    Get Element Count    css=.print-document .letter-sender    ==    0
+    Get Element Count    css=.print-document .letter-content    ==    0
     Finish Chrome Print
     Click    css=.detail-card >> button:text-is("Sulje")
     Print Template From Materials    ${LETTER_TEMPLATE}
@@ -435,14 +540,16 @@ Chrome prints the cover letter with the date in the header and no recipient box
     [Teardown]    Close Mobile Workspace
 
 Mac Safari opens the cover letter PDF with the date in the header and no recipient box
-    [Documentation]    TC23-012. Expected result: the PDF of "Tulosta hakemus / PDF" reads HAKUKIRJE, the name,
+    [Documentation]    TC23-012. Expected result: the PDF of "Tulosta hakukirje" in the details
+    ...    (Hakemus_ROBOT_Tulostin_Oy.pdf; until 17 November 2026 printed with "Tulosta hakemus / PDF") reads
+    ...    HAKUKIRJE, the name,
     ...    the email, the phone and today's date, then HAETTAVA TEHTÄVÄ and the role; it has no Vastaanottaja
     ...    or Päiväys label, the date is printed once, the place (Esimerkkilä) is not printed and the company
     ...    is named only once (in the letter). The PDF of the template printed from CV & pohjat has the
     ...    template's name, email, phone and the date in the header, before the letter.
     [Tags]    letter-print
     Open Print Device Workspace    mac-safari
-    Print Application From Details    ${COMPANY}
+    Print Letter From Details    ${COMPANY}    ${TEMPLATE_NAME}
     ${pages}=    Open Pdf On Mac Safari    ${APPLICATION_PDF}
     ${before}=    Create List    ${PRINT_CV}[email]    ${PRINT_CV}[phone]
     ${after}=    Create List    HAETTAVA TEHTÄVÄ    Testaaja    Hei,
@@ -461,13 +568,13 @@ Mac Safari opens the cover letter PDF with the date in the header and no recipie
     [Teardown]    Close Mobile Workspace
 
 iPhone home screen app shares the cover letter PDF with the date in the header and no recipient box
-    [Documentation]    TC23-013. Expected result: as in TC23-012 for the shared PDFs of "Tulosta hakemus / PDF"
-    ...    (Hakemus_ROBOT_Tulostin_Oy.pdf) and of the template printed from CV & pohjat
+    [Documentation]    TC23-013. Expected result: as in TC23-012 for the shared PDFs of "Tulosta hakukirje"
+    ...    in the details (Hakemus_ROBOT_Tulostin_Oy.pdf) and of the template printed from CV & pohjat
     ...    (Hakemus_Matti_Meikäläinen.pdf, title "Hakemus"): the date is in the header after the contact lines,
     ...    and there is no recipient box.
     [Tags]    letter-print
     Open Print Device Workspace    iphone    390    844    mobile=${True}
-    Print Application From Details    ${COMPANY}
+    Print Letter From Details    ${COMPANY}    ${TEMPLATE_NAME}
     ${pages}=    Share Pdf On iPhone    ${APPLICATION_PDF}    Hakemus – ${COMPANY}
     ${before}=    Create List    ${PRINT_CV}[email]    ${PRINT_CV}[phone]
     ${after}=    Create List    HAETTAVA TEHTÄVÄ    Testaaja    Hei,
@@ -481,4 +588,157 @@ iPhone home screen app shares the cover letter PDF with the date in the header a
     ${before}=    Create List    ${PERSON_EMAIL}    ${PERSON_PHONE}
     ${after}=    Create List    Hei,    Ystävällisin terveisin,    ${PERSON}
     Letter Pdf Should Have The Date In The Header    ${pages}    ${PERSON}    ${before}    ${after}
+    [Teardown]    Close Mobile Workspace
+
+Application details print button is named Tulosta yhteenveto / PDF
+    [Documentation]    TC23-014. Expected result: the print buttons of the application details are, in this order,
+    ...    "Tulosta yhteenveto / PDF", "Tulosta muistiinpanot / PDF" and "Avaa AI-chat tällä hakemuksella";
+    ...    the old name "Tulosta hakemus / PDF" is nowhere in the details, and the cover letter keeps its own
+    ...    button "Tulosta hakukirje: <template>".
+    [Tags]    application-summary
+    Open Application Details    ${COMPANY}
+    ${labels}=    Evaluate JavaScript    ${None}
+    ...    () => Array.from(document.querySelectorAll('.detail-print-actions button')).map((b) => b.textContent.trim())
+    Should Be Equal    ${labels}    ${{ ['Tulosta yhteenveto / PDF', 'Tulosta muistiinpanot / PDF', 'Avaa AI-chat tällä hakemuksella'] }}
+    Get Text    css=.detail-card    not contains    Tulosta hakemus
+    Get Element Count    css=.detail-document:text-is("Tulosta hakukirje: ${TEMPLATE_NAME}")    ==    1
+    Click    css=.detail-card >> button:text-is("Sulje")
+
+Chrome prints the summary of a full application with every section and the events newest first
+    [Documentation]    TC23-015. The application has every fact, an app CV, a template, three events and notes.
+    ...    Expected result: "Tulosta yhteenveto / PDF" renders the print sheet print-applicationSummary (and calls
+    ...    window.print() once) with the title bar HAKEMUS, the role as the heading, "ROBOT Esimerkki Oy ·
+    ...    Helsinki", "Tulostettu <today>" and the sections Perustiedot (Yritys, Tehtävä, Sijainti, Ilmoituksen
+    ...    linkki, Vaihe, Lähetyspäivä, Vastauspäivä, Seuraava tehtävä, Muistutuspäivä in this order, dates as
+    ...    pp.kk.vvvv), Liitteet (the names of the CV and the template), Tapahtumahistoria (Päivä, Tapahtuma,
+    ...    Lisätieto; 10.11., 05.11., 02.11.) and Muistiinpanot (the notes with their line breaks). The posting
+    ...    link points to the full address and shows it without https://. No part of the cover letter is
+    ...    printed, and laid out for print every section heading has break-after: avoid.
+    [Tags]    application-summary
+    ${expected}=    Full Summary
+    Open Print Device Workspace    chrome
+    Print Summary From Details    ${FULL_COMPANY}
+    Wait For Chrome Print    print-applicationSummary
+    Summary Print Sheet Should Be    ${expected}
+    Summary Headings Should Not Break Alone
+    Get Element Count    ${PDF_DIALOG}    ==    0
+    Finish Chrome Print
+    [Teardown]    Close Mobile Workspace
+
+Mac Safari opens the summary PDF of a full application
+    [Documentation]    TC23-016. Expected result: on a Mac (Safari) "Tulosta yhteenveto / PDF" opens the PDF
+    ...    Hakemus_ROBOT_Esimerkki_Oy_Frontend-kehittäjä.pdf, whose text has the same content as the Chrome print
+    ...    in TC23-015 in the same order (the events under PÄIVÄ, TAPAHTUMA, LISÄTIETO, newest first, the link
+    ...    without https://), no HAKUKIRJE title bar and no "Vanha hakemusteksti", and no page ends with a
+    ...    section heading. The app window never prints.
+    [Tags]    application-summary
+    ${expected}=    Full Summary
+    Open Print Device Workspace    mac-safari
+    Print Summary From Details    ${FULL_COMPANY}
+    ${pages}=    Open Pdf On Mac Safari    ${FULL_PDF}
+    Summary Pdf Should Be    ${pages}    ${expected}
+    [Teardown]    Close Mobile Workspace
+
+iPhone home screen app shares the summary PDF of a full application
+    [Documentation]    TC23-017. Expected result: in the iPhone home screen app "Tulosta yhteenveto / PDF" and
+    ...    "Tulosta / jaa PDF" share one PDF Hakemus_ROBOT_Esimerkki_Oy_Frontend-kehittäjä.pdf with the title
+    ...    "Hakemus – ROBOT Esimerkki Oy" and the same text as in TC23-016.
+    [Tags]    application-summary
+    ${expected}=    Full Summary
+    Open Print Device Workspace    iphone    390    844    mobile=${True}
+    Print Summary From Details    ${FULL_COMPANY}
+    ${pages}=    Share Pdf On iPhone    ${FULL_PDF}    Hakemus – ${FULL_COMPANY}
+    Summary Pdf Should Be    ${pages}    ${expected}
+    [Teardown]    Close Mobile Workspace
+
+Summary of an application with only a company and a role has no empty sections
+    [Documentation]    TC23-018. The application has only a company and a role (and the default stage
+    ...    Kiinnostava). Expected result: the Chrome print sheet and the Mac Safari PDF
+    ...    (Hakemus_ROBOT_Vähäinen_Oy_Harjoittelija.pdf) have the heading Harjoittelija, the subtitle with the
+    ...    company only (no " · "), and only the section Perustiedot with Yritys, Tehtävä and Vaihe; there is
+    ...    no Liitteet, Tapahtumahistoria, Muistiinpanot or Vanha hakemusteksti heading and no empty fact row.
+    [Tags]    application-summary
+    ${expected}=    Minimal Summary
+    Open Print Device Workspace    chrome
+    Print Summary From Details    ${MINIMAL_COMPANY}
+    Wait For Chrome Print    print-applicationSummary
+    Summary Print Sheet Should Be    ${expected}
+    Get Element Count    ${SUMMARY_SHEET} >> css=.summary-events    ==    0
+    Finish Chrome Print
+    Close Mobile Workspace
+    Open Print Device Workspace    mac-safari
+    Print Summary From Details    ${MINIMAL_COMPANY}
+    ${pages}=    Open Pdf On Mac Safari    Hakemus_ROBOT_Vähäinen_Oy_Harjoittelija.pdf    ${MIN_SMALL_PDF_BYTES}
+    Summary Pdf Should Be    ${pages}    ${expected}
+    Pdf Text Should Not Contain    ${pages}[0]    ·
+    [Teardown]    Close Mobile Workspace
+
+Summary lists a deleted CV and a deleted cover letter file as in the details
+    [Documentation]    TC23-019. The application points to an app CV and two cover letter files, and the app's
+    ...    lists of CVs and files no longer have the CV and one of the files (GET /api/cvs and /api/files are
+    ...    mocked, as after a delete in another tab). Expected result: the details show "CV on poistettu" and
+    ...    "Tiedosto on poistettu" and the download button of the remaining file; the summary's Liitteet has
+    ...    "Hakukirjetiedosto robot-yhteenveto-kirje.txt" and the rows "Poistettu CV on poistettu" and
+    ...    "Poistettu Tiedosto on poistettu" (class summary-missing), in the same words as the details.
+    [Tags]    application-summary
+    ${cvs}=    Api Request    GET    /api/cvs    user=A
+    ${files}=    Api Request    GET    /api/files    user=A
+    ${expr}=    Catenate
+    ...    {'title': 'Testaaja', 'subtitle': $DELETED_COMPANY, 'headings': ['Perustiedot', 'Liitteet'],
+    ...    'facts': [['Yritys', $DELETED_COMPANY], ['Tehtävä', 'Testaaja'], ['Vaihe', 'Kiinnostava']],
+    ...    'attachments': [['Hakukirjetiedosto', $KEPT_LETTER], ['Poistettu', 'CV on poistettu'], ['Poistettu', 'Tiedosto on poistettu']],
+    ...    'events': None, 'notes': None, 'applicationText': None, 'link': None}
+    ${expected}=    Evaluate    ${expr}
+    Open Print Device Workspace    chrome
+    Mock Lists Without    ${cvs.json}    ${files.json}    ${DELETED_CV_ID}    ${DELETED_LETTER_ID}
+    Open Application Details    ${DELETED_COMPANY}
+    ${missing}=    Evaluate JavaScript    ${None}
+    ...    () => Array.from(document.querySelectorAll('.detail-card .detail-missing')).map((e) => e.textContent.trim())
+    Should Be Equal    ${missing}    ${{ ['CV on poistettu', 'Tiedosto on poistettu'] }}
+    Get Element Count    css=.detail-document:text-is("Lataa hakukirje: ${KEPT_LETTER}")    ==    1
+    Click    ${SUMMARY_BUTTON}
+    Wait For Chrome Print    print-applicationSummary
+    Summary Print Sheet Should Be    ${expected}
+    Get Element Count    ${SUMMARY_SHEET} >> css=tr.summary-missing    ==    2
+    Finish Chrome Print
+    [Teardown]    Run Keywords    Clear Mocked Responses    AND    Close Mobile Workspace
+
+Summary prints an old application text that does not fit in the notes as its own section
+    [Documentation]    TC23-020. The application has short notes and an old application text (applicationText) of
+    ...    about 9 000 characters, which together do not fit in the 8 000 character notes, so the app keeps the
+    ...    text as it is. Expected result: the details show it under "Vanha hakemusteksti"; the Chrome print
+    ...    sheet has the sections Perustiedot, Muistiinpanot (only the notes) and Vanha hakemusteksti (the whole
+    ...    text), and the Mac Safari PDF Hakemus_ROBOT_Vanha_Teksti_Oy_Myyjä.pdf has the same sections in that
+    ...    order with the beginning and the end of the text, over several pages, and no page ends with a
+    ...    section heading.
+    [Tags]    application-summary    old-application-text
+    ${expected}=    Old Text Summary
+    Open Print Device Workspace    chrome
+    Open Application Details    ${OLD_TEXT_COMPANY}
+    Get Text    css=.detail-card section.detail-copy:has(h3:text-is("Vanha hakemusteksti")) p    contains    Kappale 80.
+    Click    ${SUMMARY_BUTTON}
+    Wait For Chrome Print    print-applicationSummary
+    Summary Print Sheet Should Be    ${expected}
+    Finish Chrome Print
+    Close Mobile Workspace
+    Open Print Device Workspace    mac-safari
+    Print Summary From Details    ${OLD_TEXT_COMPANY}
+    ${pages}=    Open Pdf On Mac Safari    ${OLD_TEXT_PDF}
+    ${count}=    Get Length    ${pages}
+    Should Be True    ${count} >= 2    msg=The summary with the long old text has only ${count} page
+    Summary Pdf Should Be    ${pages}    ${expected}
+    [Teardown]    Close Mobile Workspace
+
+Tulosta hakukirje still prints the HAKUKIRJE cover letter and not the summary
+    [Documentation]    TC23-021. Expected result: "Tulosta hakukirje: <template>" in the details still renders the
+    ...    cover letter sheet print-application with the title bar HAKUKIRJE and the letter of the template
+    ...    (the placeholders filled in), and no summary sheet; its PDF is checked in TC23-012 and TC23-013.
+    [Tags]    application-summary    letter-print
+    Open Print Device Workspace    chrome
+    Print Letter From Details    ${COMPANY}    ${TEMPLATE_NAME}
+    Wait For Chrome Print    print-application
+    Get Text    css=.print-document.print-application .letter-titlebar    ==    HAKUKIRJE
+    Get Text    css=.print-document.print-application    contains    Haen tehtävää Testaaja yrityksessä ${COMPANY}.
+    Get Element Count    ${SUMMARY_SHEET}    ==    0
+    Finish Chrome Print
     [Teardown]    Close Mobile Workspace

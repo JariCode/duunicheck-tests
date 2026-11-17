@@ -20,8 +20,31 @@ ${PDF_READY_TITLE}        PDF on valmis
 ${SAFARI_HELP}            Avaa duunicheck.jaricode.fi Safarissa, niin voit tulostaa tai tallentaa PDF:n sieltä.
 # A real PDF of the app embeds the DM Sans fonts, so it is far bigger than this.
 ${MIN_PDF_BYTES}          ${10240}
+# The summary of an application with only a company and a role (TC23-018) has one short section, so pdfmake
+# embeds only a few dozen glyphs; with the fonts it is still far over this (about 10 kB on 17 November 2026).
+${MIN_SMALL_PDF_BYTES}    ${8192}
 # Height of an A4 page; the CV print sheet is one page tall (PrintSheet.css .print-document.print-cv).
 ${A4_HEIGHT_MM}           ${297}
+# ApplicationDetails.jsx: the application summary print (utils/applicationSummary.js).
+${SUMMARY_BUTTON}         css=.detail-print-actions >> button:text-is("Tulosta yhteenveto / PDF")
+${SUMMARY_SHEET}          css=.print-document.print-applicationSummary
+# The section headings of the summary in their order; empty sections are left out.
+@{SUMMARY_HEADINGS}       Perustiedot    Liitteet    Tapahtumahistoria    Muistiinpanot    Vanha hakemusteksti
+# Reads the summary print sheet (textContent, so CSS text-transform and the screen layout do not matter).
+${SUMMARY_SHEET_JS}       SEPARATOR=
+...    () => { const sheet = document.querySelector('.print-document.print-applicationSummary'); if (!sheet) return null;
+...    const t = (e) => (e ? e.textContent : null); const sections = Array.from(sheet.querySelectorAll('section.summary-section'));
+...    const rows = (heading) => { const s = sections.find((x) => t(x.querySelector('h2')) === heading);
+...    return s ? Array.from(s.querySelectorAll('tbody tr')).map((r) => Array.from(r.children).map(t)) : null };
+...    const para = (heading) => { const s = sections.find((x) => t(x.querySelector('h2')) === heading); return s ? t(s.querySelector('p')) : null };
+...    const link = sheet.querySelector('.summary-facts a');
+...    return { titlebar: t(sheet.querySelector('.letter-titlebar')), title: t(sheet.querySelector('.summary-header h1')),
+...    subtitle: t(sheet.querySelector('.summary-header p')), printed: t(sheet.querySelector('.summary-header small')),
+...    headings: sections.map((s) => t(s.querySelector('h2'))), facts: rows('Perustiedot'), attachments: rows('Liitteet'),
+...    eventHead: Array.from(sheet.querySelectorAll('.summary-events thead th')).map(t), events: rows('Tapahtumahistoria'),
+...    notes: para('Muistiinpanot'), applicationText: para('Vanha hakemusteksti'),
+...    link: link ? { href: link.getAttribute('href'), text: link.textContent } : null,
+...    letter: sheet.querySelectorAll('.letter-content, .letter-sender, .letter-body').length } }
 # Reads a Blob or File as base64 in the page (the argument is a blob URL or null for the shared file).
 ${READ_PDF_JS}            SEPARATOR=
 ...    async (url) => { const blob = url ? await (await fetch(url)).blob() : window.__lastSharedFile;
@@ -102,20 +125,25 @@ Print Cv From Materials
     Go To Section    CV & pohjat
     Click    css=.material-card:has-text("${cv_name}") >> button:text-is("Tulosta / tallenna PDF")
 
-Print Application From Details
-    [Documentation]    Opens the details of the application and presses "Tulosta hakemus / PDF".
+Open Application Details
+    [Documentation]    Opens the details of the application from the list.
     [Arguments]    ${company}
     Go To Section    Hakemukset
     Click    css=.job-row:has-text("${company}") >> button:text-is("Tiedot")
     Wait For Elements State    css=.detail-card    visible
-    Click    css=.detail-print-actions >> button:text-is("Tulosta hakemus / PDF")
+
+Print Summary From Details
+    [Documentation]    Opens the details of the application and presses "Tulosta yhteenveto / PDF" (the
+    ...    application summary, kind applicationSummary; until 17 November 2026 "Tulosta hakemus / PDF",
+    ...    which printed the cover letter).
+    [Arguments]    ${company}
+    Open Application Details    ${company}
+    Click    ${SUMMARY_BUTTON}
 
 Print Letter From Details
     [Documentation]    Opens the details of the application and presses "Tulosta hakukirje: <template>".
     [Arguments]    ${company}    ${template_name}
-    Go To Section    Hakemukset
-    Click    css=.job-row:has-text("${company}") >> button:text-is("Tiedot")
-    Wait For Elements State    css=.detail-card    visible
+    Open Application Details    ${company}
     Click    css=.detail-document:has-text("Tulosta hakukirje: ${template_name}")
 
 Print Template From Materials
@@ -163,14 +191,14 @@ App Window Should Not Print
 
 Blob Should Be A Pdf
     [Documentation]    The blob URL the app opened still gives the PDF: type application/pdf, the PDF header
-    ...    and more than MIN_PDF_BYTES bytes.
-    [Arguments]    ${url}
+    ...    and more than min_bytes bytes (MIN_PDF_BYTES by default).
+    [Arguments]    ${url}    ${min_bytes}=${MIN_PDF_BYTES}
     ${blob}=    Evaluate JavaScript    ${None}
     ...    async (url) => { const blob = await (await fetch(url)).blob(); const head = new TextDecoder().decode(await blob.slice(0, 5).arrayBuffer()); return { type: blob.type, size: blob.size, head } }
     ...    arg=${url}
     Should Be Equal    ${blob}[type]    application/pdf
     Should Be Equal    ${blob}[head]    %PDF-
-    Should Be True    ${blob}[size] > ${MIN_PDF_BYTES}    msg=The opened PDF has only ${blob}[size] bytes
+    Should Be True    ${blob}[size] > ${min_bytes}    msg=The opened PDF has only ${blob}[size] bytes
 
 Opened Pdf Pages
     [Documentation]    The text of every page of the PDF behind the blob URL the app opened (Mac Safari).
@@ -288,6 +316,97 @@ App Cv Gap Scale
     ...    async (cv) => { const entry = performance.getEntriesByType('resource').map((e) => e.name).find((name) => name.includes('/utils/printPdf.js')); if (!entry) return 'printPdf.js was not loaded'; return (await import(entry)).cvGapScale(cv) }
     ...    arg=${cv}
     RETURN    ${scale}
+
+Helsinki Short Date
+    [Documentation]    Today in Finnish time as pp.kk.vvvv, the "Tulostettu" date of the summary. Built here,
+    ...    independently of the app.
+    ${date}=    Evaluate    datetime.datetime.now(zoneinfo.ZoneInfo('Europe/Helsinki')).strftime('%d.%m.%Y')
+    ...    modules=datetime,zoneinfo
+    RETURN    ${date}
+
+Summary Sheet
+    [Documentation]    The application summary print sheet as data (see SUMMARY_SHEET_JS), or None.
+    ${sheet}=    Evaluate JavaScript    ${None}    ${SUMMARY_SHEET_JS}
+    RETURN    ${sheet}
+
+Summary Print Sheet Should Be
+    [Documentation]    The summary print sheet (Chrome's print) has the title bar HAKEMUS, the role as the
+    ...    heading, the given subtitle ("company · place", None when there is none), "Tulostettu <today>",
+    ...    exactly the given section headings in that order and exactly the given rows: ${expected} has
+    ...    headings, facts and attachments ([label, value] rows, None for a missing section), events ([date,
+    ...    type, note], newest first), notes and applicationText (None when not printed) and link ({href,
+    ...    text} or None). No part of the cover letter is in the sheet.
+    [Arguments]    ${expected}
+    ${sheet}=    Summary Sheet
+    Should Not Be Equal    ${sheet}    ${None}    msg=No application summary print sheet is rendered
+    ${date}=    Helsinki Short Date
+    Should Be Equal    ${sheet}[titlebar]    HAKEMUS
+    Should Be Equal    ${sheet}[title]    ${expected}[title]
+    Should Be Equal    ${sheet}[subtitle]    ${expected}[subtitle]
+    Should Be Equal    ${sheet}[printed]    Tulostettu ${date}
+    Should Be Equal    ${sheet}[headings]    ${expected}[headings]
+    FOR    ${key}    IN    facts    attachments    events    notes    applicationText    link
+        Should Be Equal    ${sheet}[${key}]    ${expected}[${key}]    msg=Summary ${key}: ${sheet}[${key}]
+    END
+    IF    $expected['events']
+        Should Be Equal    ${sheet}[eventHead]    ${{ ['Päivä', 'Tapahtuma', 'Lisätieto'] }}
+    END
+    Should Be Equal As Integers    ${sheet}[letter]    0    msg=The summary has parts of the cover letter
+    Get Element Count    css=.print-document.print-application    ==    0
+
+Summary Headings Should Not Break Alone
+    [Documentation]    Laid out for print, every section heading of the summary sheet has break-after: avoid,
+    ...    so the browser never leaves it alone at the bottom of a page.
+    Emulate Media    media=print
+    ${breaks}=    Evaluate JavaScript    ${None}
+    ...    () => Array.from(document.querySelectorAll('.print-applicationSummary .summary-section h2')).map((h) => getComputedStyle(h).breakAfter)
+    Emulate Media    media=screen
+    Should Not Be Empty    ${breaks}
+    FOR    ${value}    IN    @{breaks}
+        Should Be Equal    ${value}    avoid
+    END
+
+Summary Pdf Should Be
+    [Documentation]    The summary PDF reads, in this order: HAKEMUS, the role, the subtitle, "Tulostettu
+    ...    <today>", then every expected section heading with its rows (the events after the column titles
+    ...    PÄIVÄ, TAPAHTUMA, LISÄTIETO) and the notes. Of the old application text, which may run over
+    ...    several pages, its first and last 60 characters are checked. Headings that are not expected, the
+    ...    cover letter title bar HAKUKIRJE and the link scheme are not printed, and no page ends with a
+    ...    section heading (the heading moves to the next page with its section).
+    [Arguments]    ${pages}    ${expected}
+    ${date}=    Helsinki Short Date
+    ${parts}=    Evaluate
+    ...    ['HAKEMUS', $expected['title']] + ([$expected['subtitle']] if $expected['subtitle'] else []) + ['Tulostettu ' + $date]
+    FOR    ${heading}    IN    @{expected}[headings]
+        Append To List    ${parts}    ${heading}
+        IF    $heading == 'Perustiedot'
+            ${rows}=    Evaluate    [cell for row in $expected['facts'] for cell in row]
+        ELSE IF    $heading == 'Liitteet'
+            ${rows}=    Evaluate    [cell for row in $expected['attachments'] for cell in row]
+        ELSE IF    $heading == 'Tapahtumahistoria'
+            ${rows}=    Evaluate    ['PÄIVÄ', 'TAPAHTUMA', 'LISÄTIETO'] + [cell for row in $expected['events'] for cell in row if cell]
+        ELSE IF    $heading == 'Muistiinpanot'
+            ${rows}=    Create List    ${expected}[notes]
+        ELSE
+            ${text}=    Set Variable    ${expected}[applicationText]
+            ${rows}=    Create List    ${text}[:60]    ${text}[-60:]
+        END
+        Append To List    ${parts}    @{rows}
+    END
+    ${all}=    Evaluate    ' '.join($pages)
+    Pdf Text Should Contain In Order    ${all}    @{parts}
+    ${absent}=    Evaluate    [h for h in $SUMMARY_HEADINGS if h not in $expected['headings']]
+    Pdf Text Should Not Contain    ${all}    https://    @{absent}
+    # Case-sensitive: the attachment label "Hakukirjetiedosto" may be printed, the title bar must not.
+    ${letter_bars}=    Pdf Text Count    ${all}    HAKUKIRJE
+    Should Be Equal As Integers    ${letter_bars}    0    msg=The summary PDF has the cover letter title bar
+    ${compact}=    Evaluate    [''.join(page.split()) for page in $pages[:-1]]
+    FOR    ${index}    ${page}    IN ENUMERATE    @{compact}
+        FOR    ${heading}    IN    @{expected}[headings]
+            ${alone}=    Evaluate    $page.endswith(''.join($heading.split()))
+            Should Not Be True    ${alone}    msg=Page ${index + 1} of the summary PDF ends with the heading ${heading}
+        END
+    END
 
 Metric Font Sizes
     [Documentation]    Returns the computed font sizes of the label row (div), the number (b) and the note
