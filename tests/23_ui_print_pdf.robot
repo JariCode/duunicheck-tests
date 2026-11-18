@@ -17,11 +17,16 @@ ${CV_NAME}          ROBOT Tulostus-CV
 ${FULL_NAME}        Väinö Testinen
 ${TEMPLATE_NAME}    ROBOT Tulostuspohja
 ${COMPANY}          ROBOT Tulostin Oy
-# printPdf.js pdfFileName: CV_<full name>, Hakemus_<company> for the cover letter ("Tulosta hakukirje"),
-# Hakemus_<company>_<role> for the application summary ("Tulosta yhteenveto / PDF"), spaces as underscores.
+# printFileName.js pdfFileName: CV_<full name>, Hakukirje_<company>_<role> for the cover letter ("Tulosta
+# hakukirje"; until 18 November 2026 Hakemus_<company>), Hakemus_<company>_<role> for the application summary
+# ("Tulosta yhteenveto / PDF"), Muistiinpanot_<company> for the notes, spaces as underscores. In Chrome, Edge
+# and Firefox the same name without .pdf is the page title while window.print() runs (TC23-022).
 ${CV_PDF}           CV_Väinö_Testinen.pdf
-${APPLICATION_PDF}    Hakemus_ROBOT_Tulostin_Oy.pdf
+${APPLICATION_PDF}    Hakukirje_ROBOT_Tulostin_Oy_Testaaja.pdf
 ${SUMMARY_PDF}      Hakemus_ROBOT_Tulostin_Oy_Testaaja.pdf
+${NOTES_PDF}        Muistiinpanot_ROBOT_Tulostin_Oy.pdf
+# frontend/index.html <title>, the page title outside printing.
+${APP_TITLE}        DuuniCheck – työnhaun seuranta
 # The application summary tests (TC23-014..020). Every name, address and number is made up.
 ${FULL_COMPANY}     ROBOT Esimerkki Oy
 ${FULL_ROLE}        Frontend-kehittäjä
@@ -46,8 +51,9 @@ ${SHORT_CV_NAME}    ROBOT Lyhyt CV
 ${LONG_CV_NAME}     ROBOT Pitkä CV
 ${PERSON_CV_PDF}    CV_Matti_Meikäläinen.pdf
 ${LETTER_TEMPLATE}    ROBOT Kirjepohja ilman hakemusta
-# A template printed from CV & pohjat has no application, so the file is named after its full name.
-${TEMPLATE_PDF}     Hakemus_Matti_Meikäläinen.pdf
+# A template printed from CV & pohjat has no application, so the file is named after its full name
+# (title "Hakukirje").
+${TEMPLATE_PDF}     Hakukirje_Matti_Meikäläinen.pdf
 
 
 *** Keywords ***
@@ -257,6 +263,27 @@ Print In Chrome
     ${capture}=    Print Capture
     Should Be Empty    ${capture}[shares]
     Should Be Empty    ${capture}[opened]
+
+Page Title Should Be
+    [Arguments]    ${expected}
+    ${title}=    Evaluate JavaScript    ${None}    () => document.title
+    Should Be Equal    ${title}    ${expected}    msg=The page title is "${title}", expected "${expected}"
+
+Chrome Print Should Be Titled
+    [Documentation]    In the Chrome session: window.print() is called once for the print sheet of the given
+    ...    class, and at that moment document.title is the file name of the document without .pdf. After
+    ...    afterprint the sheet is removed and the title is the app title again, also a moment later.
+    [Arguments]    ${sheet}    ${file_name}
+    Wait For Chrome Print    ${sheet}
+    ${capture}=    Print Capture
+    ${expected}=    Evaluate    $file_name.removesuffix('.pdf')
+    Should Be Equal    ${capture}[printTitles]    ${{ [$expected] }}
+    ...    msg=document.title at window.print(): ${capture}[printTitles], expected "${expected}"
+    Page Title Should Be    ${expected}
+    Finish Chrome Print
+    Page Title Should Be    ${APP_TITLE}
+    Sleep    500ms
+    Page Title Should Be    ${APP_TITLE}
 
 Metric Should Be Tilted
     [Arguments]    ${index}
@@ -541,12 +568,14 @@ Chrome prints the cover letter with the date in the header and no recipient box
 
 Mac Safari opens the cover letter PDF with the date in the header and no recipient box
     [Documentation]    TC23-012. Expected result: the PDF of "Tulosta hakukirje" in the details
-    ...    (Hakemus_ROBOT_Tulostin_Oy.pdf; until 17 November 2026 printed with "Tulosta hakemus / PDF") reads
+    ...    (Hakukirje_ROBOT_Tulostin_Oy_Testaaja.pdf; until 18 November 2026 Hakemus_ROBOT_Tulostin_Oy.pdf,
+    ...    until 17 November 2026 printed with "Tulosta hakemus / PDF") reads
     ...    HAKUKIRJE, the name,
     ...    the email, the phone and today's date, then HAETTAVA TEHTÄVÄ and the role; it has no Vastaanottaja
     ...    or Päiväys label, the date is printed once, the place (Esimerkkilä) is not printed and the company
     ...    is named only once (in the letter). The PDF of the template printed from CV & pohjat has the
-    ...    template's name, email, phone and the date in the header, before the letter.
+    ...    template's name, email, phone and the date in the header, before the letter, and is named
+    ...    Hakukirje_Matti_Meikäläinen.pdf.
     [Tags]    letter-print
     Open Print Device Workspace    mac-safari
     Print Letter From Details    ${COMPANY}    ${TEMPLATE_NAME}
@@ -569,13 +598,14 @@ Mac Safari opens the cover letter PDF with the date in the header and no recipie
 
 iPhone home screen app shares the cover letter PDF with the date in the header and no recipient box
     [Documentation]    TC23-013. Expected result: as in TC23-012 for the shared PDFs of "Tulosta hakukirje"
-    ...    in the details (Hakemus_ROBOT_Tulostin_Oy.pdf) and of the template printed from CV & pohjat
-    ...    (Hakemus_Matti_Meikäläinen.pdf, title "Hakemus"): the date is in the header after the contact lines,
-    ...    and there is no recipient box.
+    ...    in the details (Hakukirje_ROBOT_Tulostin_Oy_Testaaja.pdf, title "Hakukirje – ROBOT Tulostin Oy") and of
+    ...    the template printed from CV & pohjat (Hakukirje_Matti_Meikäläinen.pdf, title "Hakukirje"; both
+    ...    named Hakemus until 18 November 2026): the date is in the header after the contact lines, and there
+    ...    is no recipient box.
     [Tags]    letter-print
     Open Print Device Workspace    iphone    390    844    mobile=${True}
     Print Letter From Details    ${COMPANY}    ${TEMPLATE_NAME}
-    ${pages}=    Share Pdf On iPhone    ${APPLICATION_PDF}    Hakemus – ${COMPANY}
+    ${pages}=    Share Pdf On iPhone    ${APPLICATION_PDF}    Hakukirje – ${COMPANY}
     ${before}=    Create List    ${PRINT_CV}[email]    ${PRINT_CV}[phone]
     ${after}=    Create List    HAETTAVA TEHTÄVÄ    Testaaja    Hei,
     Letter Pdf Should Have The Date In The Header    ${pages}    ${FULL_NAME}    ${before}    ${after}
@@ -584,7 +614,7 @@ iPhone home screen app shares the cover letter PDF with the date in the header a
     Click    css=.detail-card >> button:text-is("Sulje")
     Clear Print Capture
     Print Template From Materials    ${LETTER_TEMPLATE}
-    ${pages}=    Share Pdf On iPhone    ${TEMPLATE_PDF}    Hakemus
+    ${pages}=    Share Pdf On iPhone    ${TEMPLATE_PDF}    Hakukirje
     ${before}=    Create List    ${PERSON_EMAIL}    ${PERSON_PHONE}
     ${after}=    Create List    Hei,    Ystävällisin terveisin,    ${PERSON}
     Letter Pdf Should Have The Date In The Header    ${pages}    ${PERSON}    ${before}    ${after}
@@ -741,4 +771,25 @@ Tulosta hakukirje still prints the HAKUKIRJE cover letter and not the summary
     Get Text    css=.print-document.print-application    contains    Haen tehtävää Testaaja yrityksessä ${COMPANY}.
     Get Element Count    ${SUMMARY_SHEET}    ==    0
     Finish Chrome Print
+    [Teardown]    Close Mobile Workspace
+
+Chrome print names the saved PDF after the document with the page title
+    [Documentation]    TC23-022. Chrome, Edge and Firefox offer the page title as the name of the PDF saved from
+    ...    the print dialog. The window.print recorder stores document.title at the moment of the call.
+    ...    Expected result: the title is "DuuniCheck – työnhaun seuranta" before printing; when window.print()
+    ...    is called it is the file name without .pdf: CV_Väinö_Testinen (CV card in CV & pohjat),
+    ...    Hakukirje_ROBOT_Tulostin_Oy_Testaaja ("Tulosta hakukirje"), Hakemus_ROBOT_Tulostin_Oy_Testaaja
+    ...    ("Tulosta yhteenveto / PDF") and Muistiinpanot_ROBOT_Tulostin_Oy ("Tulosta muistiinpanot / PDF");
+    ...    after the afterprint event it is "DuuniCheck – työnhaun seuranta" again.
+    [Tags]    print-title
+    Open Print Device Workspace    chrome
+    Page Title Should Be    ${APP_TITLE}
+    Print Cv From Materials    ${CV_NAME}
+    Chrome Print Should Be Titled    print-cv    ${CV_PDF}
+    Print Letter From Details    ${COMPANY}    ${TEMPLATE_NAME}
+    Chrome Print Should Be Titled    print-application    ${APPLICATION_PDF}
+    Click    ${SUMMARY_BUTTON}
+    Chrome Print Should Be Titled    print-applicationSummary    ${SUMMARY_PDF}
+    Click    css=.detail-print-actions >> button:text-is("Tulosta muistiinpanot / PDF")
+    Chrome Print Should Be Titled    print-notes    ${NOTES_PDF}
     [Teardown]    Close Mobile Workspace

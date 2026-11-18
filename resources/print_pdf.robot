@@ -75,7 +75,8 @@ Open Print Device Workspace
     Should Be Equal    ${capture}[device]    ${device}    msg=The print device emulation did not run before the app
 
 Print Capture
-    [Documentation]    Returns what the recorders saw: prints (window.print calls of the app window), opened
+    [Documentation]    Returns what the recorders saw: prints (window.print calls of the app window),
+    ...    printTitles (document.title at each of those calls), opened
     ...    ({url, target} of each window.open call), stubPrints (print calls of the stand-in tab),
     ...    canShareCalls and shares (name, type, size, title and count of the shared files).
     ${capture}=    Evaluate JavaScript    ${None}    () => window.__printCapture
@@ -91,7 +92,7 @@ Set Print Capture
 Clear Print Capture
     [Documentation]    Forgets the recorded calls (the answers set with Set Print Capture are kept).
     Evaluate JavaScript    ${None}
-    ...    () => { const c = window.__printCapture; c.prints = 0; c.stubPrints = 0; c.opened = []; c.canShareCalls = []; c.shares = [] }
+    ...    () => { const c = window.__printCapture; c.prints = 0; c.printTitles = []; c.stubPrints = 0; c.opened = []; c.canShareCalls = []; c.shares = [] }
 
 Prepare Print Data
     [Documentation]    Stores user A's CV, letter template and an application that uses both, and reloads

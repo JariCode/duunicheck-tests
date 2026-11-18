@@ -163,6 +163,7 @@ function printCaptureInit(device) {
   const capture = {
     device,
     prints: 0,
+    printTitles: [],
     opened: [],
     openResult: 'window',
     stubPrints: 0,
@@ -199,6 +200,8 @@ function printCaptureInit(device) {
   }
   method(window, 'print', () => {
     capture.prints += 1
+    // The page title at the moment of the call: Chrome, Edge and Firefox offer it as the name of the saved PDF.
+    capture.printTitles.push(document.title)
   })
   method(navigator, 'canShare', (data) => {
     capture.canShareCalls.push(fileOf(data))
